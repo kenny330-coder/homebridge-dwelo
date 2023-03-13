@@ -17,8 +17,6 @@ export class DweloSwitchAccessory implements AccessoryPlugin {
   private readonly log: Logging;
   private readonly switchService: Service;
 
-  private switchOn = false;
-
   constructor(hap: HAP, log: Logging, dweloAPI: DweloAPI, name: string, lightID: number) {
     this.log = log;
     this.name = name;
@@ -26,14 +24,18 @@ export class DweloSwitchAccessory implements AccessoryPlugin {
     this.switchService = new hap.Service.Switch(name);
     this.switchService.getCharacteristic(hap.Characteristic.On)
       .on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-        log.debug(`Current state of the switch was returned: ${this.switchOn ? 'ON' : 'OFF'}`);
-        callback(undefined, this.switchOn);
+        dweloAPI.sensor(lightID)
+          .then(sensor => {
+            const isOn = sensor?.value === 'on';
+            log.debug(`Current state of the switch was returned: ${isOn ? 'ON' : 'OFF'}`);
+            callback(undefined, isOn);
+          })
+          .catch(callback);
       })
       .on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
         dweloAPI.toggleSwitch(value as boolean, lightID)
           .then(() => {
-            this.switchOn = value as boolean;
-            log.debug(`Switch state was set to: ${this.switchOn ? 'ON' : 'OFF'}`);
+            log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
             callback();
           })
           .catch(callback);

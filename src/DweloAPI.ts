@@ -22,12 +22,32 @@ interface ListDevicesResponse {
   totalCount: number;
 }
 
+interface Sensor {
+  deviceId: number;
+  gatewayId: number;
+  sensorType: string;
+  timeIssued: string;
+  uid: number;
+  value: string;
+}
+
+interface ListSensorsResponse {
+  results: Sensor[];
+  resultsCount: number;
+  totalCount: number;
+}
+
 export class DweloAPI {
   constructor(private readonly token: string, private readonly gatewayID: string) { }
 
   public async devices(): Promise<Device[]> {
     const response = await this.request<ListDevicesResponse>(`/v3/device?gatewayId=${this.gatewayID}&limit=5000&offset=0`);
     return response.data.results;
+  }
+
+  public async sensor(deviceId: number): Promise<Sensor | undefined> {
+    const response = await this.request<ListSensorsResponse>(`/v3/sensor/gatewayId/${this.gatewayID}/?deviceId=${deviceId}`);
+    return response.data.results[0];
   }
 
   public async toggleSwitch(on: boolean, id: number) {
