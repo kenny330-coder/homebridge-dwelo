@@ -12,9 +12,9 @@ import {
 import { DweloAPI } from './DweloAPI';
 
 export class DweloSwitchAccessory implements AccessoryPlugin {
-  private readonly log: Logging;
-  // This property must be existent!!
   name: string;
+
+  private readonly log: Logging;
   private readonly switchService: Service;
 
   private switchOn = false;
