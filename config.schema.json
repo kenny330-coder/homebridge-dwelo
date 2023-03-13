@@ -1,15 +1,19 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "HomebridgePluginDwelo",
   "pluginType": "platform",
   "singular": true,
   "schema": {
     "type": "object",
     "properties": {
-      "name": {
-        "title": "Name",
+      "token": {
+        "title": "Token",
         "type": "string",
-        "required": true,
-        "default": "Example Dynamic Platform"
+        "required": true
+      },
+      "gatewayId": {
+        "title": "Gateway ID",
+        "type": "string",
+        "required": true
       }
     }
   }
