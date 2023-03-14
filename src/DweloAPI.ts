@@ -52,7 +52,7 @@ export class DweloAPI {
   }
 
   public async sensor(deviceId: number): Promise<Sensor | undefined> {
-    const response = await this.request<ListSensorsResponse>(`v3/sensor/gateway/${this.gatewayID}/`, {
+    const response = await this.request<ListSensorsResponse>(`/v3/sensor/gateway/${this.gatewayID}/`, {
       params: {
         deviceId,
       },
