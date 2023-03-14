@@ -1,5 +1,5 @@
 
-import axios, { AxiosResponse } from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 
 interface Device {
   addressId: number;
@@ -41,30 +41,41 @@ export class DweloAPI {
   constructor(private readonly token: string, private readonly gatewayID: string) { }
 
   public async devices(): Promise<Device[]> {
-    const response = await this.request<ListDevicesResponse>(`/v3/device?gatewayId=${this.gatewayID}&limit=5000&offset=0`);
+    const response = await this.request<ListDevicesResponse>('/v3/device', {
+      params: {
+        gatewayId: this.gatewayID,
+        limit: 5000,
+        offset: 0,
+      },
+    });
     return response.data.results;
   }
 
   public async sensor(deviceId: number): Promise<Sensor | undefined> {
-    const response = await this.request<ListSensorsResponse>(`/v3/sensor/gatewayId/${this.gatewayID}/?deviceId=${deviceId}`);
+    const response = await this.request<ListSensorsResponse>(`v3/sensor/gateway/${this.gatewayID}/`, {
+      params: {
+        deviceId,
+      },
+    });
     return response.data.results[0];
   }
 
   public async toggleSwitch(on: boolean, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      body: { 'command': on ? 'on' : 'off' },
+      data: { 'command': on ? 'on' : 'off' },
     });
   }
 
   private async request<T>(
     path: string,
-    { headers, method, body }: { headers?: Record<string, string>; method?: string; body?: Record<string, unknown> } = {},
+    { headers, method, data, params }: AxiosRequestConfig<T> = {},
   ): Promise<AxiosResponse<T>> {
     const response = await axios({
       url: 'https://api.dwelo.com' + path,
       method: method ?? 'GET',
-      data: body,
+      params,
+      data,
       headers: {
         ...headers,
         Authorization: `Token ${this.token} `,

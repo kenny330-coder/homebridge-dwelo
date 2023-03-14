@@ -1,12 +1,8 @@
 import {
   AccessoryPlugin,
-  CharacteristicGetCallback,
-  CharacteristicSetCallback,
-  CharacteristicValue,
   HAP,
   Logging,
   Service,
-  CharacteristicEventTypes,
 } from 'homebridge';
 
 import { DweloAPI } from './DweloAPI';
@@ -23,26 +19,19 @@ export class DweloSwitchAccessory implements AccessoryPlugin {
 
     this.switchService = new hap.Service.Switch(name);
     this.switchService.getCharacteristic(hap.Characteristic.On)
-      .on(CharacteristicEventTypes.GET, (callback: CharacteristicGetCallback) => {
-        dweloAPI.sensor(lightID)
-          .then(sensor => {
-            const isOn = sensor?.value === 'on';
-            log.debug(`Current state of the switch was returned: ${isOn ? 'ON' : 'OFF'}`);
-            callback(undefined, isOn);
-          })
-          .catch(callback);
+      .onGet(async () => {
+        const sensor = await dweloAPI.sensor(lightID);
+        log.debug('sensor returned: %s. ', sensor);
+        const isOn = sensor?.value === 'on';
+        log.debug(`Current state of the switch was returned: ${isOn ? 'ON' : 'OFF'}`);
+        return isOn;
       })
-      .on(CharacteristicEventTypes.SET, (value: CharacteristicValue, callback: CharacteristicSetCallback) => {
-        dweloAPI.toggleSwitch(value as boolean, lightID)
-          .then(() => {
-            log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
-            callback();
-          })
-          .catch(callback);
+      .onSet(async value => {
+        await dweloAPI.toggleSwitch(value as boolean, lightID);
+        log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
-
-    log.info(`Dwelo LightBulb '${name}' created!`);
+    log.info(`Dwelo LightBulb '${name} ' created!`);
   }
 
   /*
