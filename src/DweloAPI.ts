@@ -68,7 +68,7 @@ export class DweloAPI {
   }
 
   public async toggleLock(locked: boolean, id: number) {
-    return this.request(`v3/device/${id}/command/`, {
+    return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
       data: { 'command': locked ? 'lock' : 'unlock' },
     });
