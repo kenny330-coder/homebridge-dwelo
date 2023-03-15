@@ -27,8 +27,8 @@ export class DweloLockAccessory implements AccessoryPlugin {
       .onGet(this.getTargetLockState.bind(this))
       .onSet(this.setTargetLockState.bind(this));
 
-    this.lockService.addOptionalCharacteristic(api.hap.Characteristic.BatteryLevel);
-    this.lockService.addOptionalCharacteristic(api.hap.Characteristic.StatusLowBattery);
+    this.lockService.addCharacteristic(api.hap.Characteristic.BatteryLevel);
+    this.lockService.addCharacteristic(api.hap.Characteristic.StatusLowBattery);
 
     log.info(`Dwelo Lock '${name} ' created!`);
   }
@@ -41,25 +41,40 @@ export class DweloLockAccessory implements AccessoryPlugin {
     return [this.lockService];
   }
 
-  private async getLockState() {
-    const sensors = await this.dweloAPI.sensors(this.lockID);
+  private toLockState(sensors: Sensor[]) {
     const lockSensor = sensors.find(s => s.sensorType === 'lock');
-    const state = lockSensor?.value === 'locked'
+    return lockSensor?.value === 'locked'
       ? this.api.hap.Characteristic.LockCurrentState.SECURED
       : this.api.hap.Characteristic.LockCurrentState.UNSECURED;
+  }
+
+  private async getLockState() {
+    const sensors = await this.dweloAPI.sensors(this.lockID);
+    const state = this.toLockState(sensors);
     this.setBatteryLevel(sensors);
     this.log.info(`Current state of the lock was returned: ${state}`);
     return state;
   }
 
   private async getTargetLockState() {
+    this.log.info(`Current target lock state was: ${this.targetState}`);
     return this.targetState;
   }
 
   private async setTargetLockState(value: CharacteristicValue) {
     this.targetState = value;
-    await this.dweloAPI.toggleLock(!!value, this.lockID);
+
     this.log.info(`Lock state was set to: ${value}`);
+    await this.dweloAPI.toggleLock(!!value, this.lockID);
+
+    const sensors = await poll({
+      requestFn: () => this.dweloAPI.sensors(this.lockID),
+      stopCondition: s => this.toLockState(s) === value,
+      interval: 1000,
+      timeout: 15 * 1000,
+    });
+
+    return this.toLockState(sensors);
   }
 
   private setBatteryLevel(sensors: Sensor[]) {
@@ -75,7 +90,46 @@ export class DweloLockAccessory implements AccessoryPlugin {
       ? this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL
       : this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW;
 
-    this.lockService.setCharacteristic(this.api.hap.Characteristic.BatteryLevel, batteryLevel);
-    this.lockService.setCharacteristic(this.api.hap.Characteristic.StatusLowBattery, batteryStatus);
+    this.lockService.updateCharacteristic(this.api.hap.Characteristic.BatteryLevel, batteryLevel);
+    this.lockService.updateCharacteristic(this.api.hap.Characteristic.StatusLowBattery, batteryStatus);
   }
+}
+
+function poll<T>({ requestFn, stopCondition, interval, timeout }: {
+  requestFn: () => Promise<T>;
+  stopCondition: (response: T) => boolean;
+  interval: number;
+  timeout: number;
+}): Promise<T> {
+  let stop = false;
+
+  const executePoll = async (resolve: (r: T) => unknown, reject: (e: Error) => void) => {
+    const result = await requestFn();
+
+    let stopConditionalResult: boolean;
+    try {
+      stopConditionalResult = stopCondition(result);
+    } catch (e) {
+      reject(e as Error);
+      return;
+    }
+
+    if (stopConditionalResult) {
+      resolve(result);
+    } else if (stop) {
+      reject(new Error('timeout'));
+    } else {
+      setTimeout(executePoll, interval, resolve, reject);
+    }
+  };
+
+  const pollResult = new Promise<T>(executePoll);
+  const maxTimeout = new Promise<T>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error('Exceeded max timeout'));
+      stop = true;
+    }, timeout);
+  });
+
+  return Promise.race([pollResult, maxTimeout]);
 }
