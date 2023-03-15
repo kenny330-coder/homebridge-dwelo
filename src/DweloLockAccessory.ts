@@ -43,7 +43,10 @@ export class DweloLockAccessory implements AccessoryPlugin {
 
   private toLockState(sensors: Sensor[]) {
     const lockSensor = sensors.find(s => s.sensorType === 'lock');
-    return lockSensor?.value === 'locked'
+    if (!lockSensor) {
+      return this.api.hap.Characteristic.LockCurrentState.UNKNOWN;
+    }
+    return lockSensor.value === 'locked'
       ? this.api.hap.Characteristic.LockCurrentState.SECURED
       : this.api.hap.Characteristic.LockCurrentState.UNSECURED;
   }
@@ -64,8 +67,11 @@ export class DweloLockAccessory implements AccessoryPlugin {
   private async setTargetLockState(value: CharacteristicValue) {
     this.targetState = value;
 
-    this.log.info(`Lock state was set to: ${value}`);
+    this.log.info(`Lock state is setting to: ${value}`);
     await this.dweloAPI.toggleLock(!!value, this.lockID);
+    this.log.info('Lock toggle completed');
+    this.lockService.updateCharacteristic(this.api.hap.Characteristic.LockCurrentState, value);
+
     this.targetState = undefined;
 
     return value;
