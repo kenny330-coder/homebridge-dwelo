@@ -17,7 +17,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
     private readonly dweloAPI: DweloAPI,
     public readonly name: string,
     private readonly lockID: number) {
-    this.lockService = new api.hap.Service.LockManagement(name);
+    this.lockService = new api.hap.Service.LockMechanism(name);
 
     this.lockService.getCharacteristic(api.hap.Characteristic.LockCurrentState)
       .onGet(this.getLockState.bind(this));
