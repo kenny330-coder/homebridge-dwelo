@@ -51,13 +51,13 @@ export class DweloAPI {
     return response.data.results;
   }
 
-  public async sensor(deviceId: number): Promise<Sensor | undefined> {
+  public async sensors(deviceId: number): Promise<Sensor[]> {
     const response = await this.request<ListSensorsResponse>(`/v3/sensor/gateway/${this.gatewayID}/`, {
       params: {
         deviceId,
       },
     });
-    return response.data.results[0];
+    return response.data.results;
   }
 
   public async toggleSwitch(on: boolean, id: number) {
