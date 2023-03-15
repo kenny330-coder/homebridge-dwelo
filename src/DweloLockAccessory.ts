@@ -41,16 +41,6 @@ export class DweloLockAccessory implements AccessoryPlugin {
     return [this.lockService];
   }
 
-  private toLockState(sensors: Sensor[]) {
-    const lockSensor = sensors.find(s => s.sensorType === 'lock');
-    if (!lockSensor) {
-      return this.api.hap.Characteristic.LockCurrentState.UNKNOWN;
-    }
-    return lockSensor.value === 'locked'
-      ? this.api.hap.Characteristic.LockCurrentState.SECURED
-      : this.api.hap.Characteristic.LockCurrentState.UNSECURED;
-  }
-
   private async getLockState() {
     const sensors = await this.dweloAPI.sensors(this.lockID);
     const state = this.toLockState(sensors);
@@ -73,8 +63,16 @@ export class DweloLockAccessory implements AccessoryPlugin {
     this.lockService.updateCharacteristic(this.api.hap.Characteristic.LockCurrentState, value);
 
     this.targetState = undefined;
+  }
 
-    return value;
+  private toLockState(sensors: Sensor[]) {
+    const lockSensor = sensors.find(s => s.sensorType === 'lock');
+    if (!lockSensor) {
+      return this.api.hap.Characteristic.LockCurrentState.UNKNOWN;
+    }
+    return lockSensor.value === 'locked'
+      ? this.api.hap.Characteristic.LockCurrentState.SECURED
+      : this.api.hap.Characteristic.LockCurrentState.UNSECURED;
   }
 
   private setBatteryLevel(sensors: Sensor[]) {
