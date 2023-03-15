@@ -6,10 +6,11 @@ import {
   Service,
 } from 'homebridge';
 
-import { DweloAPI } from './DweloAPI';
+import { DweloAPI, Sensor } from './DweloAPI';
 
 export class DweloLockAccessory implements AccessoryPlugin {
   private readonly lockService: Service;
+  private targetState: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   constructor(
     private readonly log: Logging,
@@ -23,12 +24,11 @@ export class DweloLockAccessory implements AccessoryPlugin {
       .onGet(this.getLockState.bind(this));
 
     this.lockService.getCharacteristic(api.hap.Characteristic.LockTargetState)
-      .onGet(this.getLockState.bind(this))
-      .onSet(this.setLockState.bind(this));
+      .onGet(this.getTargetLockState.bind(this))
+      .onSet(this.setTargetLockState.bind(this));
 
+    this.lockService.addOptionalCharacteristic(api.hap.Characteristic.BatteryLevel);
     this.lockService.addOptionalCharacteristic(api.hap.Characteristic.StatusLowBattery);
-    this.lockService.getCharacteristic(api.hap.Characteristic.StatusLowBattery)
-      .onGet(this.getBatteryStatus.bind(this));
 
     log.info(`Dwelo Lock '${name} ' created!`);
   }
@@ -47,24 +47,35 @@ export class DweloLockAccessory implements AccessoryPlugin {
     const state = lockSensor?.value === 'locked'
       ? this.api.hap.Characteristic.LockCurrentState.SECURED
       : this.api.hap.Characteristic.LockCurrentState.UNSECURED;
-    this.log.debug(`Current state of the lock was returned: ${state}`);
+    this.setBatteryLevel(sensors);
+    this.log.info(`Current state of the lock was returned: ${state}`);
     return state;
   }
 
-  private async setLockState(value: CharacteristicValue) {
-    await this.dweloAPI.toggleLock(!!value, this.lockID);
-    this.log.debug(`Lock state was set to: ${value}`);
+  private async getTargetLockState() {
+    return this.targetState;
   }
 
-  private async getBatteryStatus() {
-    const sensors = await this.dweloAPI.sensors(this.lockID);
+  private async setTargetLockState(value: CharacteristicValue) {
+    this.targetState = value;
+    await this.dweloAPI.toggleLock(!!value, this.lockID);
+    this.log.info(`Lock state was set to: ${value}`);
+  }
+
+  private setBatteryLevel(sensors: Sensor[]) {
     const batterySensor = sensors.find(s => s.sensorType === 'battery');
-    this.log.debug('Lock battery percentage: ', batterySensor?.value);
+    this.log.info('Lock battery percentage: ', batterySensor?.value);
+
     if (!batterySensor) {
-      return null;
+      return;
     }
-    return parseInt(batterySensor.value, 10) > 20
+
+    const batteryLevel = parseInt(batterySensor.value, 10);
+    const batteryStatus = batteryLevel > 20
       ? this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL
       : this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW;
+
+    this.lockService.setCharacteristic(this.api.hap.Characteristic.BatteryLevel, batteryLevel);
+    this.lockService.setCharacteristic(this.api.hap.Characteristic.StatusLowBattery, batteryStatus);
   }
 }

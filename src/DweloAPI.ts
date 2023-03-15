@@ -22,7 +22,7 @@ interface ListDevicesResponse {
   totalCount: number;
 }
 
-interface Sensor {
+export interface Sensor {
   deviceId: number;
   gatewayId: number;
   sensorType: string;
