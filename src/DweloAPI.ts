@@ -67,6 +67,13 @@ export class DweloAPI {
     });
   }
 
+  public async toggleLock(locked: boolean, id: number) {
+    return this.request(`v3/device/${id}/command/`, {
+      method: 'POST',
+      data: { 'command': locked ? 'lock' : 'unlock' },
+    });
+  }
+
   private async request<T>(
     path: string,
     { headers, method, data, params }: AxiosRequestConfig<T> = {},

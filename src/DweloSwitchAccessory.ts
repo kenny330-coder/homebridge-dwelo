@@ -1,6 +1,6 @@
 import {
   AccessoryPlugin,
-  HAP,
+  API,
   Logging,
   Service,
 } from 'homebridge';
@@ -11,42 +11,34 @@ export class DweloSwitchAccessory implements AccessoryPlugin {
   name: string;
 
   private readonly log: Logging;
-  private readonly switchService: Service;
+  private readonly service: Service;
 
-  constructor(hap: HAP, log: Logging, dweloAPI: DweloAPI, name: string, lightID: number) {
+  constructor(log: Logging, api: API, dweloAPI: DweloAPI, name: string, switchID: number) {
     this.log = log;
     this.name = name;
 
-    this.switchService = new hap.Service.Switch(name);
-    this.switchService.getCharacteristic(hap.Characteristic.On)
+    this.service = new api.hap.Service.Switch(this.name);
+    this.service.getCharacteristic(api.hap.Characteristic.On)
       .onGet(async () => {
-        const sensor = await dweloAPI.sensor(lightID);
+        const sensor = await dweloAPI.sensor(switchID);
         log.debug('sensor returned: %s. ', sensor);
         const isOn = sensor?.value === 'on';
         log.debug(`Current state of the switch was returned: ${isOn ? 'ON' : 'OFF'}`);
         return isOn;
       })
       .onSet(async value => {
-        await dweloAPI.toggleSwitch(value as boolean, lightID);
+        await dweloAPI.toggleSwitch(value as boolean, switchID);
         log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
-    log.info(`Dwelo LightBulb '${name} ' created!`);
+    log.info(`Dwelo Switch '${name} ' created!`);
   }
 
-  /*
-   * This method is optional to implement. It is called when HomeKit ask to identify the accessory.
-   * Typical this only ever happens at the pairing process.
-   */
   identify(): void {
     this.log('Identify!');
   }
 
-  /*
-   * This method is called directly after creation of this instance.
-   * It should return all services which should be added to the accessory.
-   */
   getServices(): Service[] {
-    return [this.switchService];
+    return [this.service];
   }
 }
