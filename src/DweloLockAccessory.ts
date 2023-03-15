@@ -58,7 +58,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
 
   private async getTargetLockState() {
     this.log.info(`Current target lock state was: ${this.targetState}`);
-    return this.targetState;
+    return this.targetState || (await this.getLockState());
   }
 
   private async setTargetLockState(value: CharacteristicValue) {
@@ -66,15 +66,9 @@ export class DweloLockAccessory implements AccessoryPlugin {
 
     this.log.info(`Lock state was set to: ${value}`);
     await this.dweloAPI.toggleLock(!!value, this.lockID);
+    this.targetState = undefined;
 
-    const sensors = await poll({
-      requestFn: () => this.dweloAPI.sensors(this.lockID),
-      stopCondition: s => this.toLockState(s) === value,
-      interval: 1000,
-      timeout: 15 * 1000,
-    });
-
-    return this.toLockState(sensors);
+    return value;
   }
 
   private setBatteryLevel(sensors: Sensor[]) {
@@ -93,43 +87,4 @@ export class DweloLockAccessory implements AccessoryPlugin {
     this.lockService.updateCharacteristic(this.api.hap.Characteristic.BatteryLevel, batteryLevel);
     this.lockService.updateCharacteristic(this.api.hap.Characteristic.StatusLowBattery, batteryStatus);
   }
-}
-
-function poll<T>({ requestFn, stopCondition, interval, timeout }: {
-  requestFn: () => Promise<T>;
-  stopCondition: (response: T) => boolean;
-  interval: number;
-  timeout: number;
-}): Promise<T> {
-  let stop = false;
-
-  const executePoll = async (resolve: (r: T) => unknown, reject: (e: Error) => void) => {
-    const result = await requestFn();
-
-    let stopConditionalResult: boolean;
-    try {
-      stopConditionalResult = stopCondition(result);
-    } catch (e) {
-      reject(e as Error);
-      return;
-    }
-
-    if (stopConditionalResult) {
-      resolve(result);
-    } else if (stop) {
-      reject(new Error('timeout'));
-    } else {
-      setTimeout(executePoll, interval, resolve, reject);
-    }
-  };
-
-  const pollResult = new Promise<T>(executePoll);
-  const maxTimeout = new Promise<T>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error('Exceeded max timeout'));
-      stop = true;
-    }, timeout);
-  });
-
-  return Promise.race([pollResult, maxTimeout]);
 }
