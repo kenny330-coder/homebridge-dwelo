@@ -77,8 +77,8 @@ export class DweloAPI {
     await poll({
       requestFn: () => this.sensors(id),
       stopCondition: s => s.find(s => s.sensorType === 'lock')?.value === target,
-      interval: 3000,
-      timeout: 30 * 1000,
+      interval: 5000,
+      timeout: 60 * 1000,
     });
   }
 

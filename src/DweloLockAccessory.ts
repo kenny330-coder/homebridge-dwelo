@@ -10,6 +10,7 @@ import { DweloAPI, Sensor } from './DweloAPI';
 
 export class DweloLockAccessory implements AccessoryPlugin {
   private readonly lockService: Service;
+  private readonly batteryService: Service;
   private targetState: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   constructor(
@@ -27,8 +28,9 @@ export class DweloLockAccessory implements AccessoryPlugin {
       .onGet(this.getTargetLockState.bind(this))
       .onSet(this.setTargetLockState.bind(this));
 
-    this.lockService.addCharacteristic(api.hap.Characteristic.BatteryLevel);
-    this.lockService.addCharacteristic(api.hap.Characteristic.StatusLowBattery);
+    this.batteryService = new api.hap.Service.Battery(name);
+    this.batteryService.getCharacteristic(api.hap.Characteristic.BatteryLevel);
+    this.batteryService.getCharacteristic(api.hap.Characteristic.StatusLowBattery);
 
     log.info(`Dwelo Lock '${name} ' created!`);
   }
@@ -38,7 +40,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
   }
 
   getServices(): Service[] {
-    return [this.lockService];
+    return [this.lockService, this.batteryService];
   }
 
   private async getLockState() {
@@ -57,12 +59,10 @@ export class DweloLockAccessory implements AccessoryPlugin {
   private async setTargetLockState(value: CharacteristicValue) {
     this.targetState = value;
 
-    this.log.info(`Lock state is setting to: ${value}`);
+    this.log.info(`Setting lock to: ${value}`);
     await this.dweloAPI.toggleLock(!!value, this.lockID);
     this.log.info('Lock toggle completed');
-    this.lockService.updateCharacteristic(this.api.hap.Characteristic.LockCurrentState, value);
-
-    this.targetState = undefined;
+    this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(value);
   }
 
   private toLockState(sensors: Sensor[]) {
@@ -77,8 +77,6 @@ export class DweloLockAccessory implements AccessoryPlugin {
 
   private setBatteryLevel(sensors: Sensor[]) {
     const batterySensor = sensors.find(s => s.sensorType === 'battery');
-    this.log.info('Lock battery percentage: ', batterySensor?.value);
-
     if (!batterySensor) {
       return;
     }
@@ -88,7 +86,9 @@ export class DweloLockAccessory implements AccessoryPlugin {
       ? this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL
       : this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW;
 
-    this.lockService.updateCharacteristic(this.api.hap.Characteristic.BatteryLevel, batteryLevel);
-    this.lockService.updateCharacteristic(this.api.hap.Characteristic.StatusLowBattery, batteryStatus);
+    this.batteryService.getCharacteristic(this.api.hap.Characteristic.BatteryLevel).updateValue(batteryLevel);
+    this.batteryService.getCharacteristic(this.api.hap.Characteristic.StatusLowBattery).updateValue(batteryStatus);
+
+    this.log.info('Lock battery: ', batterySensor?.value);
   }
 }
