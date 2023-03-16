@@ -29,10 +29,8 @@ export class DweloLockAccessory implements AccessoryPlugin {
       .onSet(this.setTargetLockState.bind(this));
 
     this.batteryService = new api.hap.Service.Battery(name);
-    this.batteryService.getCharacteristic(api.hap.Characteristic.BatteryLevel);
-    this.batteryService.getCharacteristic(api.hap.Characteristic.StatusLowBattery);
 
-    log.info(`Dwelo Lock '${name} ' created!`);
+    log.info(`Dwelo Lock '${name}' created!`);
   }
 
   identify(): void {
