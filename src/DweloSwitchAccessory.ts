@@ -21,7 +21,6 @@ export class DweloSwitchAccessory implements AccessoryPlugin {
     this.service.getCharacteristic(api.hap.Characteristic.On)
       .onGet(async () => {
         const sensors = await dweloAPI.sensors(switchID);
-        log.debug('sensor returned: %s. ', sensors);
         const isOn = sensors[0]?.value === 'on';
         log.debug(`Current state of the switch was returned: ${isOn ? 'ON' : 'OFF'}`);
         return isOn;

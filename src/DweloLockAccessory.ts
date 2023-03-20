@@ -87,6 +87,6 @@ export class DweloLockAccessory implements AccessoryPlugin {
     this.batteryService.getCharacteristic(this.api.hap.Characteristic.BatteryLevel).updateValue(batteryLevel);
     this.batteryService.getCharacteristic(this.api.hap.Characteristic.StatusLowBattery).updateValue(batteryStatus);
 
-    this.log.info('Lock battery: ', batterySensor?.value);
+    this.log.info('Lock battery: ', batteryLevel);
   }
 }

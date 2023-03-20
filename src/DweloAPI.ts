@@ -1,7 +1,13 @@
 
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 
-interface Device {
+
+interface ListResponse {
+  resultsCount: number;
+  totalCount: number;
+}
+
+export interface Device {
   addressId: number;
   dateRegistered: string;
   deviceType: 'lock' | 'switch';
@@ -16,10 +22,8 @@ interface Device {
   uid: number;
 }
 
-interface ListDevicesResponse {
+interface ListDevicesResponse extends ListResponse {
   results: Device[];
-  resultsCount: number;
-  totalCount: number;
 }
 
 export interface Sensor {
@@ -31,10 +35,8 @@ export interface Sensor {
   value: string;
 }
 
-interface ListSensorsResponse {
+interface ListSensorsResponse extends ListResponse {
   results: Sensor[];
-  resultsCount: number;
-  totalCount: number;
 }
 
 export class DweloAPI {

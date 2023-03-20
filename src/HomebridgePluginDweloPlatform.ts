@@ -20,7 +20,7 @@ export class HomebridgePluginDweloPlatform implements StaticPlatformPlugin {
   accessories(callback: (foundAccessories: AccessoryPlugin[]) => void): void {
     this.dweloAPI.devices().then(devices => {
       const accessories = devices
-        .map(d => {
+        .map((d): AccessoryPlugin | null => {
           switch (d.deviceType) {
             case 'switch':
               return new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, d.givenName, d.uid);
@@ -32,7 +32,7 @@ export class HomebridgePluginDweloPlatform implements StaticPlatformPlugin {
               return null;
           }
         })
-        .filter((a): a is DweloSwitchAccessory => !!a);
+        .filter((a): a is AccessoryPlugin => !!a);
 
       callback(accessories);
     });
