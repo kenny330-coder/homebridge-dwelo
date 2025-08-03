@@ -1,5 +1,6 @@
 import { API, DynamicPlatformPlugin, PlatformConfig, AccessoryPlugin, Logging, PlatformAccessory } from 'homebridge';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
+import { version } from '../package.json';
 
 import { DweloAPI } from './DweloAPI';
 import { DweloLockAccessory } from './DweloLockAccessory';
@@ -17,6 +18,7 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   ) {
     this.dweloAPI = new DweloAPI(config.token, config.gatewayId);
 
+    this.log.info(`Dwelo Plugin Version: ${version}`);
     this.log.debug(`Finished initializing platform: ${this.config.name}`);
 
     this.api.on('didFinishLaunching', () => {
