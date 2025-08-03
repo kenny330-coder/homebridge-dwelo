@@ -5,6 +5,7 @@ import {
   Logging,
   Service,
 } from 'homebridge';
+import { CachedRequest } from './CachedRequest';
 
 import { DweloAPI, Sensor } from './DweloAPI';
 
@@ -12,6 +13,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
   private readonly lockService: Service;
   private readonly batteryService: Service;
   private targetState: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  private sensorCache: CachedRequest<Sensor[]>;
 
   constructor(
     private readonly log: Logging,
@@ -20,6 +22,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
     public readonly name: string,
     private readonly lockID: number) {
     this.lockService = new api.hap.Service.LockMechanism(name);
+    this.sensorCache = new CachedRequest(1000, () => this.dweloAPI.sensors(this.lockID));
 
     this.lockService.getCharacteristic(api.hap.Characteristic.LockCurrentState)
       .onGet(this.getLockState.bind(this));
@@ -42,7 +45,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
   }
 
   private async getLockState() {
-    const sensors = await this.dweloAPI.sensors(this.lockID);
+    const sensors = await this.sensorCache.get();
     const state = this.toLockState(sensors);
     this.setBatteryLevel(sensors);
     this.log.info(`Current state of the lock was returned: ${state}`);
@@ -56,6 +59,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
 
   private async setTargetLockState(value: CharacteristicValue) {
     this.targetState = value;
+    this.sensorCache.clear();
 
     this.log.info(`Setting lock to: ${value}`);
     await this.dweloAPI.toggleLock(!!value, this.lockID);

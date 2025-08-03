@@ -1,6 +1,7 @@
-
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import axiosRetry from 'axios-retry';
 
+axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 interface ListResponse {
   resultsCount: number;
@@ -10,7 +11,7 @@ interface ListResponse {
 export interface Device {
   addressId: number;
   dateRegistered: string;
-  deviceType: 'lock' | 'switch';
+  deviceType: 'lock' | 'switch' | 'dimmer';
   device_metadata: Record<string, string>;
   gatewayId: string;
   givenName: string;
@@ -69,6 +70,13 @@ export class DweloAPI {
     });
   }
 
+  public async setBrightness(brightness: number, id: number) {
+    return this.request(`/v3/device/${id}/command/`, {
+      method: 'POST',
+      data: { 'command': 'set', 'value': brightness },
+    });
+  }
+
   public async toggleLock(locked: boolean, id: number) {
     await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
@@ -88,17 +96,22 @@ export class DweloAPI {
     path: string,
     { headers, method, data, params }: AxiosRequestConfig<T> = {},
   ): Promise<AxiosResponse<T>> {
-    const response = await axios({
-      url: 'https://api.dwelo.com' + path,
-      method: method ?? 'GET',
-      params,
-      data,
-      headers: {
-        ...headers,
-        Authorization: `Token ${this.token} `,
-      },
-    });
-    return response;
+    try {
+      const response = await axios({
+        url: 'https://api.dwelo.com' + path,
+        method: method ?? 'GET',
+        params,
+        data,
+        headers: {
+          ...headers,
+          Authorization: `Token ${this.token} `,
+        },
+      });
+      return response;
+    } catch (error) {
+      console.error('Dwelo API request failed:', error);
+      throw error;
+    }
   }
 }
 
@@ -109,6 +122,7 @@ function poll<T>({ requestFn, stopCondition, interval, timeout }: {
   timeout: number;
 }): Promise<T> {
   let stop = false;
+  let attempt = 1;
 
   const executePoll = async (resolve: (r: T) => unknown, reject: (e: Error) => void) => {
     const result = await requestFn();
@@ -126,7 +140,7 @@ function poll<T>({ requestFn, stopCondition, interval, timeout }: {
     } else if (stop) {
       reject(new Error('timeout'));
     } else {
-      setTimeout(executePoll, interval, resolve, reject);
+      setTimeout(executePoll, interval * Math.pow(2, attempt++), resolve, reject);
     }
   };
 

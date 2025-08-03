@@ -1,11 +1,14 @@
-import { API, StaticPlatformPlugin, PlatformConfig, AccessoryPlugin, Logging } from 'homebridge';
+import { API, DynamicPlatformPlugin, PlatformConfig, AccessoryPlugin, Logging, PlatformAccessory } from 'homebridge';
+import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 
 import { DweloAPI } from './DweloAPI';
 import { DweloLockAccessory } from './DweloLockAccessory';
 import { DweloSwitchAccessory } from './DweloSwitchAccessory';
+import { DweloDimmerAccessory } from './DweloDimmerAccessory';
 
-export class HomebridgePluginDweloPlatform implements StaticPlatformPlugin {
+export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   private readonly dweloAPI: DweloAPI;
+  public readonly accessories: PlatformAccessory[] = [];
 
   constructor(
     public readonly log: Logging,
@@ -15,26 +18,51 @@ export class HomebridgePluginDweloPlatform implements StaticPlatformPlugin {
     this.dweloAPI = new DweloAPI(config.token, config.gatewayId);
 
     this.log.debug(`Finished initializing platform: ${this.config.name}`);
+
+    this.api.on('didFinishLaunching', () => {
+      this.discoverDevices();
+    });
   }
 
-  accessories(callback: (foundAccessories: AccessoryPlugin[]) => void): void {
-    this.dweloAPI.devices().then(devices => {
-      const accessories = devices
-        .map((d): AccessoryPlugin | null => {
-          switch (d.deviceType) {
-            case 'switch':
-              return new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, d.givenName, d.uid);
-            case 'lock':
-              return new DweloLockAccessory(this.log, this.api, this.dweloAPI, d.givenName, d.uid);
-            default:
-              this.log.warn(`Support for Dwelo accessory type: ${d.deviceType} is not implemented`);
-              this.log.warn('%s', d);
-              return null;
-          }
-        })
-        .filter((a): a is AccessoryPlugin => !!a);
+  configureAccessory(accessory: PlatformAccessory) {
+    this.log.info('Loading accessory from cache:', accessory.displayName);
+    this.accessories.push(accessory);
+  }
 
-      callback(accessories);
+  discoverDevices() {
+    this.dweloAPI.devices().then(devices => {
+      for (const device of devices) {
+        const uuid = this.api.hap.uuid.generate(device.uid.toString());
+        const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
+
+        if (existingAccessory) {
+          this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
+          this.createAccessory(existingAccessory.displayName, device.uid, device.deviceType);
+        } else {
+          this.log.info('Adding new accessory:', device.givenName);
+          const accessory = new this.api.platformAccessory(device.givenName, uuid);
+          accessory.context.device = device;
+          this.createAccessory(accessory.displayName, device.uid, device.deviceType);
+          this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+        }
+      }
     });
+  }
+
+  createAccessory(name: string, uid: number, deviceType: string) {
+    switch (deviceType) {
+      case 'switch':
+        new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, name, uid);
+        break;
+      case 'lock':
+        new DweloLockAccessory(this.log, this.api, this.dweloAPI, name, uid);
+        break;
+      case 'dimmer':
+        new DweloDimmerAccessory(this.log, this.api, this.dweloAPI, name, uid);
+        break;
+      default:
+        this.log.warn(`Support for Dwelo accessory type: ${deviceType} is not implemented`);
+        break;
+    }
   }
 }
