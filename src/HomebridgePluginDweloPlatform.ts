@@ -1,4 +1,4 @@
-import { API, DynamicPlatformPlugin, PlatformConfig, AccessoryPlugin, Logging, PlatformAccessory } from 'homebridge';
+import { API, DynamicPlatformPlugin, PlatformConfig, Logging, PlatformAccessory } from 'homebridge';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { version } from '../package.json';
 
@@ -39,31 +39,32 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
 
         if (existingAccessory) {
           this.log.info('Restoring existing accessory from cache:', existingAccessory.displayName);
-          this.createAccessory(existingAccessory.displayName, device.uid, device.deviceType);
+          existingAccessory.context.device = device;
+          this.createAccessory(existingAccessory);
         } else {
           this.log.info('Adding new accessory:', device.givenName);
           const accessory = new this.api.platformAccessory(device.givenName, uuid);
           accessory.context.device = device;
-          this.createAccessory(accessory.displayName, device.uid, device.deviceType);
+          this.createAccessory(accessory);
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         }
       }
     });
   }
 
-  createAccessory(name: string, uid: number, deviceType: string) {
-    switch (deviceType) {
+  createAccessory(accessory: PlatformAccessory) {
+    switch (accessory.context.device.deviceType) {
       case 'switch':
-        new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, name, uid);
+        new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, accessory);
         break;
       case 'lock':
-        new DweloLockAccessory(this.log, this.api, this.dweloAPI, name, uid);
+        new DweloLockAccessory(this.log, this.api, this.dweloAPI, accessory);
         break;
       case 'dimmer':
-        new DweloDimmerAccessory(this.log, this.api, this.dweloAPI, name, uid);
+        new DweloDimmerAccessory(this.log, this.api, this.dweloAPI, accessory);
         break;
       default:
-        this.log.warn(`Support for Dwelo accessory type: ${deviceType} is not implemented`);
+        this.log.warn(`Support for Dwelo accessory type: ${accessory.context.device.deviceType} is not implemented`);
         break;
     }
   }

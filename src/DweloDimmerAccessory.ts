@@ -1,27 +1,25 @@
 import {
-  AccessoryPlugin,
   API,
-  CharacteristicValue,
   Logging,
+  PlatformAccessory,
   Service,
 } from 'homebridge';
 import { CachedRequest } from './CachedRequest';
 import { DweloAPI, Sensor } from './DweloAPI';
 
-export class DweloDimmerAccessory implements AccessoryPlugin {
-  name: string;
-
+export class DweloDimmerAccessory {
   private readonly log: Logging;
   private readonly service: Service;
   private sensorCache: CachedRequest<Sensor[]>;
 
-  constructor(log: Logging, api: API, dweloAPI: DweloAPI, name: string, switchID: number) {
+  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     this.log = log;
-    this.name = name;
 
+    const switchID = accessory.context.device.uid;
     this.sensorCache = new CachedRequest(1000, () => dweloAPI.sensors(switchID));
 
-    this.service = new api.hap.Service.Lightbulb(this.name);
+    this.service = accessory.getService(api.hap.Service.Lightbulb) || accessory.addService(api.hap.Service.Lightbulb);
+
     this.service.getCharacteristic(api.hap.Characteristic.On)
       .onGet(async () => {
         const sensors = await this.sensorCache.get();
@@ -48,14 +46,6 @@ export class DweloDimmerAccessory implements AccessoryPlugin {
         log.debug(`Dimmer brightness was set to: ${value}`);
       });
 
-    log.info(`Dwelo Dimmer '${name} ' created!`);
-  }
-
-  identify(): void {
-    this.log('Identify!');
-  }
-
-  getServices(): Service[] {
-    return [this.service];
+    log.info(`Dwelo Dimmer '${accessory.displayName} ' created!`);
   }
 }

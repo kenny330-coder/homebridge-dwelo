@@ -1,26 +1,25 @@
 import {
-  AccessoryPlugin,
   API,
   Logging,
+  PlatformAccessory,
   Service,
 } from 'homebridge';
 import { CachedRequest } from './CachedRequest';
 import { DweloAPI, Sensor } from './DweloAPI';
 
-export class DweloSwitchAccessory implements AccessoryPlugin {
-  name: string;
-
+export class DweloSwitchAccessory {
   private readonly log: Logging;
   private readonly service: Service;
   private sensorCache: CachedRequest<Sensor[]>;
 
-  constructor(log: Logging, api: API, dweloAPI: DweloAPI, name: string, switchID: number) {
+  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     this.log = log;
-    this.name = name;
 
+    const switchID = accessory.context.device.uid;
     this.sensorCache = new CachedRequest(1000, () => dweloAPI.sensors(switchID));
 
-    this.service = new api.hap.Service.Switch(this.name);
+    this.service = accessory.getService(api.hap.Service.Switch) || accessory.addService(api.hap.Service.Switch);
+
     this.service.getCharacteristic(api.hap.Characteristic.On)
       .onGet(async () => {
         const sensors = await this.sensorCache.get();
@@ -34,14 +33,6 @@ export class DweloSwitchAccessory implements AccessoryPlugin {
         log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
-    log.info(`Dwelo Switch '${name} ' created!`);
-  }
-
-  identify(): void {
-    this.log('Identify!');
-  }
-
-  getServices(): Service[] {
-    return [this.service];
+    log.info(`Dwelo Switch '${accessory.displayName} ' created!`);
   }
 }

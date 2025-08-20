@@ -1,15 +1,15 @@
 import {
-  AccessoryPlugin,
   API,
   CharacteristicValue,
   Logging,
+  PlatformAccessory,
   Service,
 } from 'homebridge';
 import { CachedRequest } from './CachedRequest';
 
 import { DweloAPI, Sensor } from './DweloAPI';
 
-export class DweloLockAccessory implements AccessoryPlugin {
+export class DweloLockAccessory {
   private readonly lockService: Service;
   private readonly batteryService: Service;
   private targetState: any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -19,10 +19,12 @@ export class DweloLockAccessory implements AccessoryPlugin {
     private readonly log: Logging,
     private readonly api: API,
     private readonly dweloAPI: DweloAPI,
-    public readonly name: string,
-    private readonly lockID: number) {
-    this.lockService = new api.hap.Service.LockMechanism(name);
-    this.sensorCache = new CachedRequest(1000, () => this.dweloAPI.sensors(this.lockID));
+    private readonly accessory: PlatformAccessory) {
+
+    const lockID = accessory.context.device.uid;
+    this.sensorCache = new CachedRequest(1000, () => this.dweloAPI.sensors(lockID));
+
+    this.lockService = this.accessory.getService(this.api.hap.Service.LockMechanism) || this.accessory.addService(this.api.hap.Service.LockMechanism);
 
     this.lockService.getCharacteristic(api.hap.Characteristic.LockCurrentState)
       .onGet(this.getLockState.bind(this));
@@ -31,17 +33,9 @@ export class DweloLockAccessory implements AccessoryPlugin {
       .onGet(this.getTargetLockState.bind(this))
       .onSet(this.setTargetLockState.bind(this));
 
-    this.batteryService = new api.hap.Service.Battery(name);
+    this.batteryService = this.accessory.getService(this.api.hap.Service.Battery) || this.accessory.addService(this.api.hap.Service.Battery);
 
-    log.info(`Dwelo Lock '${name}' created!`);
-  }
-
-  identify(): void {
-    this.log('Identify!');
-  }
-
-  getServices(): Service[] {
-    return [this.lockService, this.batteryService];
+    log.info(`Dwelo Lock '${this.accessory.displayName}' created!`);
   }
 
   private async getLockState() {
@@ -62,7 +56,7 @@ export class DweloLockAccessory implements AccessoryPlugin {
     this.sensorCache.clear();
 
     this.log.info(`Setting lock to: ${value}`);
-    await this.dweloAPI.toggleLock(!!value, this.lockID);
+    await this.dweloAPI.toggleLock(!!value, this.accessory.context.device.uid);
     this.log.info('Lock toggle completed');
     this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(value);
   }
