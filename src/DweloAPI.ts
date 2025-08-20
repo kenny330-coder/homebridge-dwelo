@@ -40,7 +40,17 @@ interface ListSensorsResponse extends ListResponse {
   results: Sensor[];
 }
 
+interface QueuedRequest<T> {
+  path: string;
+  config: AxiosRequestConfig<T>;
+  resolve: (value: AxiosResponse<T>) => void;
+  reject: (reason?: any) => void;
+}
+
 export class DweloAPI {
+  private commandQueue: QueuedRequest<any>[] = [];
+  private processingPromise: Promise<void> = Promise.resolve();
+
   constructor(private readonly token: string, private readonly gatewayID: string) { }
 
   public async devices(): Promise<Device[]> {
@@ -115,24 +125,39 @@ export class DweloAPI {
 
   private async request<T>(
     path: string,
-    { headers, method, data, params }: AxiosRequestConfig<T> = {},
+    config: AxiosRequestConfig<T> = {},
   ): Promise<AxiosResponse<T>> {
-    try {
-      const response = await axios({
-        url: 'https://api.dwelo.com' + path,
-        method: method ?? 'GET',
-        params,
-        data,
-        headers: {
-          ...headers,
-          Authorization: `Token ${this.token} `,
-        },
-      });
-      return response;
-    } catch (error) {
-      console.error('Dwelo API request failed:', error);
-      throw error;
-    }
+    return new Promise<AxiosResponse<T>>((resolve, reject) => {
+      this.commandQueue.push({ path, config, resolve, reject });
+      this.processQueue();
+    });
+  }
+
+  private async processQueue(): Promise<void> {
+    this.processingPromise = this.processingPromise.then(async () => {
+      if (this.commandQueue.length > 0) {
+        const { path, config, resolve, reject } = this.commandQueue.shift()!;
+        try {
+          const response = await axios({
+            url: 'https://api.dwelo.com' + path,
+            method: config.method ?? 'GET',
+            params: config.params,
+            data: config.data,
+            headers: {
+              ...config.headers,
+              Authorization: `Token ${this.token} `,
+            },
+          });
+          resolve(response);
+        } catch (error) {
+          console.error('Dwelo API request failed:', error);
+          reject(error);
+        } finally {
+          // Delay for rate limiting (2 requests per second = 500ms delay)
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+    });
   }
 }
 

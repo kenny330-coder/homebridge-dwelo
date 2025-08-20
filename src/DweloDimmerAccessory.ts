@@ -22,8 +22,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
       .onSet(async (value) => {
-        const brightness = value as boolean ? 99 : 0;
-        await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
+        await this.dweloAPI.setDimmerState(value as boolean, this.accessory.context.device.uid);
         this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
