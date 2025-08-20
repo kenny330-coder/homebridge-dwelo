@@ -73,7 +73,14 @@ export class DweloAPI {
   public async setDimmerState(on: boolean, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': on ? 'on' : 'off' },
+      data: { 'command': on ? 'Multilevel On' : 'Multilevel Off', 'commandValue': on ? '99' : '0', 'applicationId': 'ios' },
+    });
+  }
+
+  public async setDimmerBrightness(brightness: number, id: number) {
+    return this.request(`/v3/device/${id}/command/`, {
+      method: 'POST',
+      data: { 'command': 'Multilevel On', 'commandValue': brightness.toString(), 'applicationId': 'ios' },
     });
   }
 
