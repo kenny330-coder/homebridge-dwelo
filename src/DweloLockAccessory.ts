@@ -8,10 +8,11 @@ import {
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 
-export class DweloLockAccessory extends StatefulAccessory {
+const POLLING_INTERVAL = 1 * 60 * 1000; // 1 minute
+
+export class DweloLockAccessory extends StatefulAccessory<boolean> {
   private readonly lockService: Service;
   private readonly batteryService: Service;
-  private targetState: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(log, api, dweloAPI, accessory);
@@ -22,7 +23,12 @@ export class DweloLockAccessory extends StatefulAccessory {
       .onGet(() => this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).value);
 
     this.lockService.getCharacteristic(this.api.hap.Characteristic.LockTargetState)
-      .onGet(() => this.targetState || this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).value)
+      .onGet(() => {
+        if (this.desiredValue !== undefined && Date.now() - this.lastUpdated < POLLING_INTERVAL) {
+          return this.desiredValue ? this.api.hap.Characteristic.LockTargetState.SECURED : this.api.hap.Characteristic.LockTargetState.UNSECURED;
+        }
+        return this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).value;
+      })
       .onSet(this.setTargetLockState.bind(this));
 
     this.batteryService = this.accessory.getService(this.api.hap.Service.Battery) || this.accessory.addService(this.api.hap.Service.Battery);
@@ -39,7 +45,8 @@ export class DweloLockAccessory extends StatefulAccessory {
   }
 
   private async setTargetLockState(value: CharacteristicValue) {
-    this.targetState = value;
+    this.desiredValue = !!value;
+    this.lastUpdated = Date.now();
 
     this.log.info(`Setting lock to: ${value}`);
     await this.dweloAPI.toggleLock(!!value, this.accessory.context.device.uid);

@@ -44,7 +44,7 @@ export class DweloAPI {
   constructor(private readonly token: string, private readonly gatewayID: string) { }
 
   public async devices(): Promise<Device[]> {
-    const response = await this.request<ListDevicesResponse>('/v3/device', {
+    const response = await this.request<ListDevicesResponse>('/v3/device/', {
       params: {
         gatewayId: this.gatewayID,
         limit: 5000,

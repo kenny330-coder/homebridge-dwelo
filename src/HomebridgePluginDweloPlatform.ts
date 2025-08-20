@@ -6,10 +6,14 @@ import { DweloAPI } from './DweloAPI';
 import { DweloLockAccessory } from './DweloLockAccessory';
 import { DweloSwitchAccessory } from './DweloSwitchAccessory';
 import { DweloDimmerAccessory } from './DweloDimmerAccessory';
+import { StatefulAccessory } from './StatefulAccessory';
+
+const POLLING_INTERVAL = 2 * 60 * 1000; // 2 minutes
 
 export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   private readonly dweloAPI: DweloAPI;
   public readonly accessories: PlatformAccessory[] = [];
+  public readonly accessoryHandlers: StatefulAccessory<unknown>[] = [];
 
   constructor(
     public readonly log: Logging,
@@ -23,6 +27,7 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
 
     this.api.on('didFinishLaunching', () => {
       this.discoverDevices();
+      setInterval(() => this.updateAllAccessories(), POLLING_INTERVAL);
     });
   }
 
@@ -53,19 +58,29 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   }
 
   createAccessory(accessory: PlatformAccessory) {
+    let accessoryHandler;
     switch (accessory.context.device.deviceType) {
       case 'switch':
-        new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, accessory);
+        accessoryHandler = new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, accessory);
         break;
       case 'lock':
-        new DweloLockAccessory(this.log, this.api, this.dweloAPI, accessory);
+        accessoryHandler = new DweloLockAccessory(this.log, this.api, this.dweloAPI, accessory);
         break;
       case 'dimmer':
-        new DweloDimmerAccessory(this.log, this.api, this.dweloAPI, accessory);
+        accessoryHandler = new DweloDimmerAccessory(this.log, this.api, this.dweloAPI, accessory);
         break;
       default:
         this.log.warn(`Support for Dwelo accessory type: ${accessory.context.device.deviceType} is not implemented`);
         break;
+    }
+    if (accessoryHandler) {
+      this.accessoryHandlers.push(accessoryHandler);
+    }
+  }
+
+  updateAllAccessories() {
+    for (const accessory of this.accessoryHandlers) {
+      accessory.updateState();
     }
   }
 }
