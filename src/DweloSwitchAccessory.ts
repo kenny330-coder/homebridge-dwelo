@@ -18,16 +18,19 @@ export class DweloSwitchAccessory extends StatefulAccessory<boolean> {
 
     this.service = this.accessory.getService(this.api.hap.Service.Switch) || this.accessory.addService(this.api.hap.Service.Switch);
 
+    export class DweloSwitchAccessory extends StatefulAccessory {
+  private readonly service: Service;
+
+  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
+    super(log, api, dweloAPI, accessory);
+
+    this.service = this.accessory.getService(this.api.hap.Service.Switch) || this.accessory.addService(this.api.hap.Service.Switch);
+
     this.service.getCharacteristic(this.api.hap.Characteristic.On)
       .onGet(() => {
-        if (this.desiredValue !== undefined && Date.now() - this.lastUpdated < POLLING_INTERVAL) {
-          return this.desiredValue;
-        }
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
       .onSet(async (value, callback) => {
-        this.desiredValue = value as boolean;
-        this.lastUpdated = Date.now();
         try {
           await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
           this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);

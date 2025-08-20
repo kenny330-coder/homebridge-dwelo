@@ -1,10 +1,7 @@
 import { API, Logging, PlatformAccessory } from 'homebridge';
 import { DweloAPI, Sensor } from './DweloAPI';
 
-export abstract class StatefulAccessory<T> {
-  protected desiredValue: T | undefined;
-  protected lastUpdated = 0;
-
+export abstract class StatefulAccessory {
   constructor(
     protected readonly log: Logging,
     protected readonly api: API,

@@ -9,7 +9,7 @@ import { StatefulAccessory } from './StatefulAccessory';
 
 
 
-export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
+export class DweloDimmerAccessory extends StatefulAccessory {
   private readonly service: Service;
 
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
@@ -22,10 +22,9 @@ export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
       .onSet(async (value, callback) => {
-        this.desiredValue = [value as boolean, this.desiredValue?.[1] || 0];
-        this.lastUpdated = Date.now();
         try {
-          const brightness = value as boolean ? (this.desiredValue?.[1] || 99) : 0; // If turning on, use last brightness or default to 99
+          // When turning on, use a default brightness (e.g., 99) if no previous desired brightness is available
+          const brightness = value as boolean ? 99 : 0;
           await this.dweloAPI.setDimmerState(brightness, this.accessory.context.device.uid);
           this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
           callback(null);
@@ -41,8 +40,6 @@ export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
         return this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value;
       })
       .onSet(async (value, callback) => {
-        this.desiredValue = [this.desiredValue?.[0] || false, value as number];
-        this.lastUpdated = Date.now();
         try {
           await this.dweloAPI.setDimmerState(value as number, this.accessory.context.device.uid);
           this.log.debug(`Dimmer brightness was set to: ${value}`);

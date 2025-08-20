@@ -9,7 +9,7 @@ import { StatefulAccessory } from './StatefulAccessory';
 
 
 
-export class DweloThermostatAccessory extends StatefulAccessory<[number, number, number]> {
+export class DweloThermostatAccessory extends StatefulAccessory {
   private readonly service: Service;
 
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
@@ -25,8 +25,6 @@ export class DweloThermostatAccessory extends StatefulAccessory<[number, number,
         return this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
       })
       .onSet(async (value, callback) => {
-        this.desiredValue = [value as number, this.desiredValue?.[1] || 0, this.desiredValue?.[2] || 0];
-        this.lastUpdated = Date.now();
         try {
           await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
           this.log.debug(`Thermostat mode was set to: ${value}`);
