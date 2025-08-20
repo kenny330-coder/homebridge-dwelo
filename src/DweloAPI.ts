@@ -11,7 +11,7 @@ interface ListResponse {
 export interface Device {
   addressId: number;
   dateRegistered: string;
-  deviceType: 'lock' | 'switch' | 'dimmer';
+  deviceType: 'lock' | 'switch' | 'dimmer' | 'thermostat';
   device_metadata: Record<string, string>;
   gatewayId: string;
   givenName: string;
@@ -54,7 +54,7 @@ export class DweloAPI {
     return response.data.results;
   }
 
-  public async sensors(deviceId: number): Promise<Sensor[]> {
+  public async sensors(deviceId?: number): Promise<Sensor[]> {
     const response = await this.request<ListSensorsResponse>(`/v3/sensor/gateway/${this.gatewayID}/`, {
       params: {
         deviceId,
@@ -63,30 +63,51 @@ export class DweloAPI {
     return response.data.results;
   }
 
-  public async toggleSwitch(on: boolean, id: number) {
+  public async setSwitchState(on: boolean, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': on ? 'on' : 'off' },
+      data: { 'command': 'SwitchState', 'value': on ? 'on' : 'off' },
     });
   }
 
-  public async setBrightness(brightness: number, id: number) {
+  public async setDimmerState(on: boolean, brightness: number, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': 'set', 'value': brightness },
+      data: { 'command': 'DimmerState', 'value': on ? brightness : 0 },
     });
   }
 
-  public async toggleLock(locked: boolean, id: number) {
+  public async setThermostatMode(mode: string, id: number) {
+    return this.request(`/v3/device/${id}/command/`, {
+      method: 'POST',
+      data: { 'command': 'ThermostatMode', 'value': mode },
+    });
+  }
+
+  public async setThermostatHeatSetPoint(temperature: number, id: number) {
+    return this.request(`/v3/device/${id}/command/`, {
+      method: 'POST',
+      data: { 'command': 'ThermostatHeatSetPoint', 'value': temperature },
+    });
+  }
+
+  public async setThermostatCoolSetPoint(temperature: number, id: number) {
+    return this.request(`/v3/device/${id}/command/`, {
+      method: 'POST',
+      data: { 'command': 'ThermostatCoolSetPoint', 'value': temperature },
+    });
+  }
+
+  public async setLockState(locked: boolean, id: number) {
     await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': locked ? 'lock' : 'unlock' },
+      data: { 'command': 'LockedState', 'value': locked ? 'locked' : 'unlocked' },
     });
 
     const target = locked ? 'locked' : 'unlocked';
     await poll({
       requestFn: () => this.sensors(id),
-      stopCondition: s => s.find(s => s.sensorType === 'lock')?.value === target,
+      stopCondition: s => s.find(s => s.sensorType === 'DoorLocked')?.value === target,
       interval: 5000,
       timeout: 60 * 1000,
     });

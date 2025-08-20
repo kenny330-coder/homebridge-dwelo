@@ -6,6 +6,7 @@ import { DweloAPI } from './DweloAPI';
 import { DweloLockAccessory } from './DweloLockAccessory';
 import { DweloSwitchAccessory } from './DweloSwitchAccessory';
 import { DweloDimmerAccessory } from './DweloDimmerAccessory';
+import { DweloThermostatAccessory } from './DweloThermostatAccessory';
 import { StatefulAccessory } from './StatefulAccessory';
 
 const POLLING_INTERVAL = 2 * 60 * 1000; // 2 minutes
@@ -69,6 +70,9 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
       case 'dimmer':
         accessoryHandler = new DweloDimmerAccessory(this.log, this.api, this.dweloAPI, accessory);
         break;
+      case 'thermostat':
+        accessoryHandler = new DweloThermostatAccessory(this.log, this.api, this.dweloAPI, accessory);
+        break;
       default:
         this.log.warn(`Support for Dwelo accessory type: ${accessory.context.device.deviceType} is not implemented`);
         break;
@@ -79,8 +83,11 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   }
 
   updateAllAccessories() {
-    for (const accessory of this.accessoryHandlers) {
-      accessory.updateState();
-    }
+    this.dweloAPI.sensors().then(sensors => {
+      for (const accessory of this.accessoryHandlers) {
+        const accessorySensors = sensors.filter(s => s.deviceId === accessory.accessory.context.device.uid);
+        accessory.updateState(accessorySensors);
+      }
+    });
   }
 }

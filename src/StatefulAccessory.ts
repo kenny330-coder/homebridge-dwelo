@@ -1,5 +1,5 @@
 import { API, Logging, PlatformAccessory } from 'homebridge';
-import { DweloAPI } from './DweloAPI';
+import { DweloAPI, Sensor } from './DweloAPI';
 
 export abstract class StatefulAccessory<T> {
   protected desiredValue: T | undefined;
@@ -9,8 +9,8 @@ export abstract class StatefulAccessory<T> {
     protected readonly log: Logging,
     protected readonly api: API,
     protected readonly dweloAPI: DweloAPI,
-    protected readonly accessory: PlatformAccessory,
+    public readonly accessory: PlatformAccessory,
   ) { }
 
-  abstract updateState(): Promise<void>;
+  abstract updateState(sensors: Sensor[]): Promise<void>;
 }

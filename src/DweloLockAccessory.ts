@@ -36,8 +36,7 @@ export class DweloLockAccessory extends StatefulAccessory<boolean> {
     this.log.info(`Dwelo Lock '${this.accessory.displayName}' created!`);
   }
 
-  async updateState(): Promise<void> {
-    const sensors = await this.dweloAPI.sensors(this.accessory.context.device.uid);
+  async updateState(sensors: Sensor[]): Promise<void> {
     const lockState = this.toLockState(sensors);
     this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(lockState);
     this.setBatteryLevel(sensors);
@@ -49,7 +48,7 @@ export class DweloLockAccessory extends StatefulAccessory<boolean> {
     this.lastUpdated = Date.now();
 
     this.log.info(`Setting lock to: ${value}`);
-    await this.dweloAPI.toggleLock(!!value, this.accessory.context.device.uid);
+    await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);
     this.log.info('Lock toggle completed');
     this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(value);
   }

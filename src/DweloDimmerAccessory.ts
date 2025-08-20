@@ -27,7 +27,7 @@ export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
       .onSet(async value => {
         this.desiredValue = [value as boolean, this.desiredValue?.[1] || 0];
         this.lastUpdated = Date.now();
-        await this.dweloAPI.toggleSwitch(value as boolean, this.accessory.context.device.uid);
+        await this.dweloAPI.setDimmerState(value as boolean, this.desiredValue?.[1] || 0, this.accessory.context.device.uid);
         this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
@@ -41,15 +41,14 @@ export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
       .onSet(async value => {
         this.desiredValue = [this.desiredValue?.[0] || false, value as number];
         this.lastUpdated = Date.now();
-        await this.dweloAPI.setBrightness(value as number, this.accessory.context.device.uid);
+        await this.dweloAPI.setDimmerState(this.desiredValue?.[0] || false, value as number, this.accessory.context.device.uid);
         this.log.debug(`Dimmer brightness was set to: ${value}`);
       });
 
     this.log.info(`Dwelo Dimmer '${this.accessory.displayName}' created!`);
   }
 
-  async updateState(): Promise<void> {
-    const sensors = await this.dweloAPI.sensors(this.accessory.context.device.uid);
+  async updateState(sensors: Sensor[]): Promise<void> {
     const isOn = sensors.find(s => s.sensorType === 'light')?.value === 'on';
     const brightness = sensors.find(s => s.sensorType === 'Dimmer')?.value;
 
