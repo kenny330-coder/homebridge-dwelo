@@ -154,7 +154,7 @@ export class DweloAPI {
           reject(error);
         } finally {
           // Delay for rate limiting (2 requests per second = 500ms delay)
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 150));
         }
       }
     });
