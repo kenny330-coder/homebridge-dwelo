@@ -66,7 +66,7 @@ export class DweloAPI {
   public async setSwitchState(on: boolean, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': 'SwitchState', 'value': on ? 'on' : 'off' },
+      data: { 'command': on ? 'on' : 'off' },
     });
   }
 
