@@ -4,35 +4,31 @@ import {
   PlatformAccessory,
   Service,
 } from 'homebridge';
-import { CachedRequest } from './CachedRequest';
 import { DweloAPI, Sensor } from './DweloAPI';
+import { StatefulAccessory } from './StatefulAccessory';
 
-export class DweloSwitchAccessory {
-  private readonly log: Logging;
+export class DweloSwitchAccessory extends StatefulAccessory {
   private readonly service: Service;
-  private sensorCache: CachedRequest<Sensor[]>;
 
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
-    this.log = log;
+    super(log, api, dweloAPI, accessory);
 
-    const switchID = accessory.context.device.uid;
-    this.sensorCache = new CachedRequest(1000, () => dweloAPI.sensors(switchID));
+    this.service = this.accessory.getService(this.api.hap.Service.Switch) || this.accessory.addService(this.api.hap.Service.Switch);
 
-    this.service = accessory.getService(api.hap.Service.Switch) || accessory.addService(api.hap.Service.Switch);
-
-    this.service.getCharacteristic(api.hap.Characteristic.On)
-      .onGet(async () => {
-        const sensors = await this.sensorCache.get();
-        const isOn = sensors[0]?.value === 'on';
-        log.debug(`Current state of the switch was returned: ${isOn ? 'ON' : 'OFF'}`);
-        return isOn;
-      })
+    this.service.getCharacteristic(this.api.hap.Characteristic.On)
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.On).value)
       .onSet(async value => {
-        this.sensorCache.clear();
-        await dweloAPI.toggleSwitch(value as boolean, switchID);
-        log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
+        await this.dweloAPI.toggleSwitch(value as boolean, this.accessory.context.device.uid);
+        this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
-    log.info(`Dwelo Switch '${accessory.displayName} ' created!`);
+    this.log.info(`Dwelo Switch '${this.accessory.displayName}' created!`);
+  }
+
+  async updateState(): Promise<void> {
+    const sensors = await this.dweloAPI.sensors(this.accessory.context.device.uid);
+    const isOn = sensors[0]?.value === 'on';
+    this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
+    this.log.debug(`Switch state updated to: ${isOn ? 'ON' : 'OFF'}`);
   }
 }

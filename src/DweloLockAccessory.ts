@@ -5,55 +5,41 @@ import {
   PlatformAccessory,
   Service,
 } from 'homebridge';
-import { CachedRequest } from './CachedRequest';
-
 import { DweloAPI, Sensor } from './DweloAPI';
+import { StatefulAccessory } from './StatefulAccessory';
 
-export class DweloLockAccessory {
+export class DweloLockAccessory extends StatefulAccessory {
   private readonly lockService: Service;
   private readonly batteryService: Service;
   private targetState: any; // eslint-disable-line @typescript-eslint/no-explicit-any
-  private sensorCache: CachedRequest<Sensor[]>;
 
-  constructor(
-    private readonly log: Logging,
-    private readonly api: API,
-    private readonly dweloAPI: DweloAPI,
-    private readonly accessory: PlatformAccessory) {
-
-    const lockID = accessory.context.device.uid;
-    this.sensorCache = new CachedRequest(1000, () => this.dweloAPI.sensors(lockID));
+  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
+    super(log, api, dweloAPI, accessory);
 
     this.lockService = this.accessory.getService(this.api.hap.Service.LockMechanism) || this.accessory.addService(this.api.hap.Service.LockMechanism);
 
-    this.lockService.getCharacteristic(api.hap.Characteristic.LockCurrentState)
-      .onGet(this.getLockState.bind(this));
+    this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState)
+      .onGet(() => this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).value);
 
-    this.lockService.getCharacteristic(api.hap.Characteristic.LockTargetState)
-      .onGet(this.getTargetLockState.bind(this))
+    this.lockService.getCharacteristic(this.api.hap.Characteristic.LockTargetState)
+      .onGet(() => this.targetState || this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).value)
       .onSet(this.setTargetLockState.bind(this));
 
     this.batteryService = this.accessory.getService(this.api.hap.Service.Battery) || this.accessory.addService(this.api.hap.Service.Battery);
 
-    log.info(`Dwelo Lock '${this.accessory.displayName}' created!`);
+    this.log.info(`Dwelo Lock '${this.accessory.displayName}' created!`);
   }
 
-  private async getLockState() {
-    const sensors = await this.sensorCache.get();
-    const state = this.toLockState(sensors);
+  async updateState(): Promise<void> {
+    const sensors = await this.dweloAPI.sensors(this.accessory.context.device.uid);
+    const lockState = this.toLockState(sensors);
+    this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(lockState);
     this.setBatteryLevel(sensors);
-    this.log.info(`Current state of the lock was returned: ${state}`);
-    return state;
-  }
-
-  private async getTargetLockState() {
-    this.log.info(`Current target lock state was: ${this.targetState}`);
-    return this.targetState || (await this.getLockState());
+    this.log.debug(`Lock state updated to: ${lockState}`);
   }
 
   private async setTargetLockState(value: CharacteristicValue) {
     this.targetState = value;
-    this.sensorCache.clear();
 
     this.log.info(`Setting lock to: ${value}`);
     await this.dweloAPI.toggleLock(!!value, this.accessory.context.device.uid);
