@@ -41,17 +41,10 @@ export class DweloLockAccessory extends StatefulAccessory {
     this.log.debug(`Lock state updated to: ${lockState}`);
   }
 
-  private async setTargetLockState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    try {
-      this.log.info(`Setting lock to: ${value}`);
-      await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);
-      this.log.info('Lock toggle completed');
-      callback(null);
-    } catch (error) {
-      this.log.error('Failed to set lock state:', error);
-      await this.updateState([]); // Pass empty array as sensors are fetched by platform
-      callback(error as Error);
-    }
+  private async setTargetLockState(value: CharacteristicValue) {
+    this.log.info(`Setting lock to: ${value}`);
+    await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);
+    this.log.info('Lock toggle completed');
   }
 
   private toLockState(sensors: Sensor[]) {

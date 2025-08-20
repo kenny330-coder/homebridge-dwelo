@@ -21,16 +21,9 @@ export class DweloSwitchAccessory extends StatefulAccessory {
       .onGet(() => {
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
-      .onSet(async (value, callback) => {
-        try {
-          await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
-          this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
-          callback(null);
-        } catch (error) {
-          this.log.error('Failed to set switch state:', error);
-          await this.updateState([]);
-          callback(error as Error);
-        }
+      .onSet(async (value) => {
+        await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
+        this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
     this.log.info(`Dwelo Switch '${this.accessory.displayName}' created!`);

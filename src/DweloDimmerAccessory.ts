@@ -21,17 +21,10 @@ export class DweloDimmerAccessory extends StatefulAccessory {
       .onGet(() => {
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
-      .onSet(async (value, callback) => {
-        try {
-          const brightness = value as boolean ? 99 : 0;
-          await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
-          this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
-          callback(null);
-        } catch (error) {
-          this.log.error('Failed to set dimmer state:', error);
-          await this.updateState([]);
-          callback(error as Error);
-        }
+      .onSet(async (value) => {
+        const brightness = value as boolean ? 99 : 0;
+        await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
+        this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness)
@@ -41,17 +34,10 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         const isOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value as boolean;
         return isOn ? 100 : 0;
       })
-      .onSet(async (value, callback) => {
-        try {
-          const brightness = value as number;
-          await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
-          this.log.debug(`Dimmer brightness was set to: ${brightness}`);
-          callback(null);
-        } catch (error) {
-          this.log.error('Failed to set dimmer brightness:', error);
-          await this.updateState([]);
-          callback(error as Error);
-        }
+      .onSet(async (value) => {
+        const brightness = value as number;
+        await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
+        this.log.debug(`Dimmer brightness was set to: ${brightness}`);
       });
 
     
