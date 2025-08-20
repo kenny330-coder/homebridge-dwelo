@@ -36,8 +36,16 @@ export class DweloDimmerAccessory extends StatefulAccessory {
       })
       .onSet(async (value) => {
         const brightness = value as number;
-        await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
-        this.log.debug(`Dimmer brightness was set to: ${brightness}`);
+        if (brightness === 0) {
+          await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
+          this.log.debug(`Dimmer set to OFF (brightness 0)`);
+        } else if (brightness === 100) {
+          await this.dweloAPI.setDimmerState(true, this.accessory.context.device.uid);
+          this.log.debug(`Dimmer set to ON (brightness 100)`);
+        } else {
+          await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
+          this.log.debug(`Dimmer brightness was set to: ${brightness}`);
+        }
       });
 
     
