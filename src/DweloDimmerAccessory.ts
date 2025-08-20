@@ -60,10 +60,22 @@ export class DweloDimmerAccessory extends StatefulAccessory {
   }
 
   async updateState(sensors: Sensor[]): Promise<void> {
-    const isOn = sensors.find(s => s.sensorType === 'light')?.value === 'on';
+    const lightSensor = sensors.find(s => s.sensorType === 'light');
+    const isOn = lightSensor?.value === 'on';
+    let brightness = 0;
+
+    if (lightSensor && lightSensor.value !== 'off') {
+      // Assuming the light sensor value can also be a number for brightness
+      // or that 'on' implies full brightness if no specific value is given.
+      brightness = parseInt(lightSensor.value, 10);
+      if (isNaN(brightness) || brightness === 0) {
+        brightness = 100; // Default to 100 if 'on' but no specific brightness value
+      }
+    }
 
     this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
+    this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(brightness);
 
-    this.log.debug(`Dimmer state updated to: ${isOn ? 'ON' : 'OFF'}`);
+    this.log.debug(`Dimmer state updated to: ${isOn ? 'ON' : 'OFF'}, Brightness: ${brightness}`);
   }
 }

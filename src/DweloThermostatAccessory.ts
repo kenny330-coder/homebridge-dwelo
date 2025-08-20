@@ -89,6 +89,8 @@ export class DweloThermostatAccessory extends StatefulAccessory {
     const currentTemperature = sensors.find(s => s.sensorType === 'temperature')?.value;
     const heatingStatus = sensors.find(s => s.sensorType === 'heating_status')?.value;
     const coolingStatus = sensors.find(s => s.sensorType === 'cooling_status')?.value;
+    const targetTemperature = sensors.find(s => s.sensorType === 'target_temperature')?.value;
+    const targetMode = sensors.find(s => s.sensorType === 'target_mode')?.value;
 
     let currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.OFF;
     if (heatingStatus === 'on') {
@@ -97,10 +99,21 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.COOL;
     }
 
+    let targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.OFF;
+    if (targetMode === 'heat') {
+      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT;
+    } else if (targetMode === 'cool') {
+      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.COOL;
+    } else if (targetMode === 'auto') {
+      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO;
+    }
+
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(parseFloat(currentTemperature || '0'));
+    this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetHeatingCoolingState);
+    this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(parseFloat(targetTemperature || '0'));
 
-    this.log.debug(`Thermostat state updated to: current temperature: ${currentTemperature}`);
+    this.log.debug(`Thermostat state updated to: current temperature: ${currentTemperature}, target temperature: ${targetTemperature}, target mode: ${targetMode}`);
   }
 
   private modeToString(mode: number): string {
