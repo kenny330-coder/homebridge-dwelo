@@ -3,6 +3,7 @@ import {
   Logging,
   PlatformAccessory,
   Service,
+  CharacteristicSetCallback,
 } from 'homebridge';
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
@@ -24,11 +25,18 @@ export class DweloSwitchAccessory extends StatefulAccessory<boolean> {
         }
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
-      .onSet(async value => {
+      .onSet(async (value, callback) => {
         this.desiredValue = value as boolean;
         this.lastUpdated = Date.now();
-        await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
-        this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
+        try {
+          await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
+          this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
+          callback(null);
+        } catch (error) {
+          this.log.error('Failed to set switch state:', error);
+          await this.updateState([]);
+          callback(error as Error);
+        }
       });
 
     this.log.info(`Dwelo Switch '${this.accessory.displayName}' created!`);

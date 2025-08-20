@@ -65,8 +65,9 @@ export class DweloThermostatAccessory extends StatefulAccessory<[number, number,
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)
       .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits).value)
-      .onSet(value => {
+      .onSet((value, callback) => {
         this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits).updateValue(value);
+        callback(null); // Indicate success to HomeKit
       });
 
     this.log.info(`Dwelo Thermostat '${this.accessory.displayName}' created!`);

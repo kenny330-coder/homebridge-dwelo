@@ -25,12 +25,13 @@ export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
         this.desiredValue = [value as boolean, this.desiredValue?.[1] || 0];
         this.lastUpdated = Date.now();
         try {
-          await this.dweloAPI.setDimmerState(value as boolean, this.desiredValue?.[1] || 0, this.accessory.context.device.uid);
+          const brightness = value as boolean ? (this.desiredValue?.[1] || 99) : 0; // If turning on, use last brightness or default to 99
+          await this.dweloAPI.setDimmerState(brightness, this.accessory.context.device.uid);
           this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
           callback(null);
         } catch (error) {
           this.log.error('Failed to set dimmer state:', error);
-          await this.updateState([]); // Pass empty array as sensors are fetched by platform
+          await this.updateState([]);
           callback(error as Error);
         }
       });
@@ -43,12 +44,12 @@ export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
         this.desiredValue = [this.desiredValue?.[0] || false, value as number];
         this.lastUpdated = Date.now();
         try {
-          await this.dweloAPI.setDimmerState(this.desiredValue?.[0] || false, value as number, this.accessory.context.device.uid);
+          await this.dweloAPI.setDimmerState(value as number, this.accessory.context.device.uid);
           this.log.debug(`Dimmer brightness was set to: ${value}`);
           callback(null);
         } catch (error) {
           this.log.error('Failed to set dimmer brightness:', error);
-          await this.updateState([]); // Pass empty array as sensors are fetched by platform
+          await this.updateState([]);
           callback(error as Error);
         }
       });

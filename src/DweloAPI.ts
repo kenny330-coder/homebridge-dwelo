@@ -70,10 +70,15 @@ export class DweloAPI {
     });
   }
 
-  public async setDimmerState(on: boolean, brightness: number, id: number) {
+  public async setDimmerState(brightness: number, id: number) {
+    const command = brightness > 0 ? 'on' : 'off';
+    const data: { command: string; value?: number } = { command };
+    if (brightness > 0) {
+      data.value = brightness;
+    }
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': 'DimmerState', 'value': on ? brightness : 0 },
+      data,
     });
   }
 
