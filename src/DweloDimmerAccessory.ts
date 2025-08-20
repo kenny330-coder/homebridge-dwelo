@@ -7,7 +7,7 @@ import {
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 
-const POLLING_INTERVAL = 1 * 60 * 1000; // 1 minute
+
 
 export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
   private readonly service: Service;
@@ -19,30 +19,38 @@ export class DweloDimmerAccessory extends StatefulAccessory<[boolean, number]> {
 
     this.service.getCharacteristic(this.api.hap.Characteristic.On)
       .onGet(() => {
-        if (this.desiredValue !== undefined && Date.now() - this.lastUpdated < POLLING_INTERVAL) {
-          return this.desiredValue[0];
-        }
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
-      .onSet(async value => {
+      .onSet(async (value, callback) => {
         this.desiredValue = [value as boolean, this.desiredValue?.[1] || 0];
         this.lastUpdated = Date.now();
-        await this.dweloAPI.setDimmerState(value as boolean, this.desiredValue?.[1] || 0, this.accessory.context.device.uid);
-        this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
+        try {
+          await this.dweloAPI.setDimmerState(value as boolean, this.desiredValue?.[1] || 0, this.accessory.context.device.uid);
+          this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
+          callback(null);
+        } catch (error) {
+          this.log.error('Failed to set dimmer state:', error);
+          await this.updateState([]); // Pass empty array as sensors are fetched by platform
+          callback(error as Error);
+        }
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness)
       .onGet(() => {
-        if (this.desiredValue !== undefined && Date.now() - this.lastUpdated < POLLING_INTERVAL) {
-          return this.desiredValue[1];
-        }
         return this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value;
       })
-      .onSet(async value => {
+      .onSet(async (value, callback) => {
         this.desiredValue = [this.desiredValue?.[0] || false, value as number];
         this.lastUpdated = Date.now();
-        await this.dweloAPI.setDimmerState(this.desiredValue?.[0] || false, value as number, this.accessory.context.device.uid);
-        this.log.debug(`Dimmer brightness was set to: ${value}`);
+        try {
+          await this.dweloAPI.setDimmerState(this.desiredValue?.[0] || false, value as number, this.accessory.context.device.uid);
+          this.log.debug(`Dimmer brightness was set to: ${value}`);
+          callback(null);
+        } catch (error) {
+          this.log.error('Failed to set dimmer brightness:', error);
+          await this.updateState([]); // Pass empty array as sensors are fetched by platform
+          callback(error as Error);
+        }
       });
 
     this.log.info(`Dwelo Dimmer '${this.accessory.displayName}' created!`);

@@ -4,11 +4,12 @@ import {
   Logging,
   PlatformAccessory,
   Service,
+  CharacteristicSetCallback,
 } from 'homebridge';
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 
-const POLLING_INTERVAL = 1 * 60 * 1000; // 1 minute
+
 
 export class DweloLockAccessory extends StatefulAccessory<boolean> {
   private readonly lockService: Service;
@@ -24,9 +25,6 @@ export class DweloLockAccessory extends StatefulAccessory<boolean> {
 
     this.lockService.getCharacteristic(this.api.hap.Characteristic.LockTargetState)
       .onGet(() => {
-        if (this.desiredValue !== undefined && Date.now() - this.lastUpdated < POLLING_INTERVAL) {
-          return this.desiredValue ? this.api.hap.Characteristic.LockTargetState.SECURED : this.api.hap.Characteristic.LockTargetState.UNSECURED;
-        }
         return this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).value;
       })
       .onSet(this.setTargetLockState.bind(this));
@@ -43,14 +41,20 @@ export class DweloLockAccessory extends StatefulAccessory<boolean> {
     this.log.debug(`Lock state updated to: ${lockState}`);
   }
 
-  private async setTargetLockState(value: CharacteristicValue) {
+  private async setTargetLockState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
     this.desiredValue = !!value;
     this.lastUpdated = Date.now();
 
-    this.log.info(`Setting lock to: ${value}`);
-    await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);
-    this.log.info('Lock toggle completed');
-    this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(value);
+    try {
+      this.log.info(`Setting lock to: ${value}`);
+      await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);
+      this.log.info('Lock toggle completed');
+      callback(null);
+    } catch (error) {
+      this.log.error('Failed to set lock state:', error);
+      await this.updateState([]); // Pass empty array as sensors are fetched by platform
+      callback(error as Error);
+    }
   }
 
   private toLockState(sensors: Sensor[]) {

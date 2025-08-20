@@ -7,7 +7,7 @@ import {
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 
-const POLLING_INTERVAL = 1 * 60 * 1000; // 1 minute
+
 
 export class DweloThermostatAccessory extends StatefulAccessory<[number, number, number]> {
   private readonly service: Service;
@@ -22,16 +22,20 @@ export class DweloThermostatAccessory extends StatefulAccessory<[number, number,
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState)
       .onGet(() => {
-        if (this.desiredValue !== undefined && Date.now() - this.lastUpdated < POLLING_INTERVAL) {
-          return this.desiredValue[0];
-        }
         return this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
       })
-      .onSet(async value => {
+      .onSet(async (value, callback) => {
         this.desiredValue = [value as number, this.desiredValue?.[1] || 0, this.desiredValue?.[2] || 0];
         this.lastUpdated = Date.now();
-        await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
-        this.log.debug(`Thermostat mode was set to: ${value}`);
+        try {
+          await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
+          this.log.debug(`Thermostat mode was set to: ${value}`);
+          callback(null);
+        } catch (error) {
+          this.log.error('Failed to set thermostat mode:', error);
+          await this.updateState([]); // Pass empty array as sensors are fetched by platform
+          callback(error as Error);
+        }
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature)
@@ -39,20 +43,24 @@ export class DweloThermostatAccessory extends StatefulAccessory<[number, number,
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature)
       .onGet(() => {
-        if (this.desiredValue !== undefined && Date.now() - this.lastUpdated < POLLING_INTERVAL) {
-          return this.desiredValue[1];
-        }
         return this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).value;
       })
-      .onSet(async value => {
+      .onSet(async (value, callback) => {
         this.desiredValue = [this.desiredValue?.[0] || 0, value as number, this.desiredValue?.[2] || 0];
         this.lastUpdated = Date.now();
-        if (this.desiredValue[0] === 1) { // Heat
-          await this.dweloAPI.setThermostatHeatSetPoint(value as number, this.accessory.context.device.uid);
-        } else if (this.desiredValue[0] === 2) { // Cool
-          await this.dweloAPI.setThermostatCoolSetPoint(value as number, this.accessory.context.device.uid);
+        try {
+          if (this.desiredValue[0] === 1) { // Heat
+            await this.dweloAPI.setThermostatTemperature('heat', value as number, this.accessory.context.device.uid);
+          } else if (this.desiredValue[0] === 2) { // Cool
+            await this.dweloAPI.setThermostatTemperature('cool', value as number, this.accessory.context.device.uid);
+          }
+          this.log.debug(`Thermostat temperature was set to: ${value}`);
+          callback(null);
+        } catch (error) {
+          this.log.error('Failed to set thermostat temperature:', error);
+          await this.updateState([]); // Pass empty array as sensors are fetched by platform
+          callback(error as Error);
         }
-        this.log.debug(`Thermostat temperature was set to: ${value}`);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)

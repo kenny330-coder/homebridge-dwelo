@@ -84,17 +84,10 @@ export class DweloAPI {
     });
   }
 
-  public async setThermostatHeatSetPoint(temperature: number, id: number) {
+  public async setThermostatTemperature(mode: string, temperature: number, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': 'ThermostatHeatSetPoint', 'value': temperature },
-    });
-  }
-
-  public async setThermostatCoolSetPoint(temperature: number, id: number) {
-    return this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { 'command': 'ThermostatCoolSetPoint', 'value': temperature },
+      data: { 'command': mode, 'commandValue': temperature },
     });
   }
 
