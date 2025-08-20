@@ -14,7 +14,7 @@ const POLLING_INTERVAL = 2 * 60 * 1000; // 2 minutes
 export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   private readonly dweloAPI: DweloAPI;
   public readonly accessories: PlatformAccessory[] = [];
-  public readonly accessoryHandlers: StatefulAccessory<unknown>[] = [];
+  public readonly accessoryHandlers: StatefulAccessory[] = [];
 
   constructor(
     public readonly log: Logging,

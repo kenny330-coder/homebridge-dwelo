@@ -99,7 +99,7 @@ export class DweloAPI {
   public async setLockState(locked: boolean, id: number) {
     await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': 'LockedState', 'value': locked ? 'locked' : 'unlocked' },
+      data: { 'command': locked ? 'lock' : 'unlock' }, // Use 'lock'/'unlock' directly
     });
 
     const target = locked ? 'locked' : 'unlocked';

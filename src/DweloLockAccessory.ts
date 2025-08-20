@@ -11,7 +11,7 @@ import { StatefulAccessory } from './StatefulAccessory';
 
 
 
-export class DweloLockAccessory extends StatefulAccessory<boolean> {
+export class DweloLockAccessory extends StatefulAccessory {
   private readonly lockService: Service;
   private readonly batteryService: Service;
 
@@ -42,9 +42,6 @@ export class DweloLockAccessory extends StatefulAccessory<boolean> {
   }
 
   private async setTargetLockState(value: CharacteristicValue, callback: CharacteristicSetCallback) {
-    this.desiredValue = !!value;
-    this.lastUpdated = Date.now();
-
     try {
       this.log.info(`Setting lock to: ${value}`);
       await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);

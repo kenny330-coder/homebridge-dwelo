@@ -8,17 +8,8 @@ import {
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 
-const POLLING_INTERVAL = 1 * 60 * 1000; // 1 minute
 
-export class DweloSwitchAccessory extends StatefulAccessory<boolean> {
-  private readonly service: Service;
-
-  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
-    super(log, api, dweloAPI, accessory);
-
-    this.service = this.accessory.getService(this.api.hap.Service.Switch) || this.accessory.addService(this.api.hap.Service.Switch);
-
-    export class DweloSwitchAccessory extends StatefulAccessory {
+export class DweloSwitchAccessory extends StatefulAccessory {
   private readonly service: Service;
 
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {

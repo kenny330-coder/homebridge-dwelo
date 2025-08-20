@@ -44,19 +44,33 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         return this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).value;
       })
       .onSet(async (value, callback) => {
-        this.desiredValue = [this.desiredValue?.[0] || 0, value as number, this.desiredValue?.[2] || 0];
-        this.lastUpdated = Date.now();
         try {
-          if (this.desiredValue[0] === 1) { // Heat
-            await this.dweloAPI.setThermostatTemperature('heat', value as number, this.accessory.context.device.uid);
-          } else if (this.desiredValue[0] === 2) { // Cool
-            await this.dweloAPI.setThermostatTemperature('cool', value as number, this.accessory.context.device.uid);
+          // Use the current target heating/cooling state to determine the mode for setting temperature
+          const currentTargetMode = this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
+          let mode: string;
+          switch (currentTargetMode) {
+            case this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT:
+              mode = 'heat';
+              break;
+            case this.api.hap.Characteristic.TargetHeatingCoolingState.COOL:
+              mode = 'cool';
+              break;
+            case this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO:
+              // For auto, we might need to decide between heat/cool based on current temp vs target
+              // For simplicity, let's default to 'cool' if setting a target temperature in auto mode.
+              mode = 'cool';
+              break;
+            default:
+              this.log.warn('Cannot set target temperature when thermostat is off or in an unsupported mode.');
+              callback(this.api.hap.HAPStatus.OPERATION_TIMED_OUT);
+              return;
           }
+          await this.dweloAPI.setThermostatTemperature(mode, value as number, this.accessory.context.device.uid);
           this.log.debug(`Thermostat temperature was set to: ${value}`);
           callback(null);
         } catch (error) {
           this.log.error('Failed to set thermostat temperature:', error);
-          await this.updateState([]); // Pass empty array as sensors are fetched by platform
+          await this.updateState([]);
           callback(error as Error);
         }
       });
