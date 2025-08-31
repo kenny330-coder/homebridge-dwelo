@@ -97,7 +97,7 @@ export class DweloAPI {
   public async setThermostatMode(mode: string, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': 'ThermostatMode', 'value': mode },
+      data: { 'command': mode },
     });
   }
 

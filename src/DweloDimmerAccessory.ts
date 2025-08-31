@@ -26,23 +26,19 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           this.onSetTimeout = null;
         }
         if (value) { // Turning On
-          this.onSetTimeout = setTimeout(() => {
-            this.dweloAPI.setDimmerState(true, this.accessory.context.device.uid);
-            this.log.debug('Dimmer state was set to: ON (from OnSet)');
-            setTimeout(() => this.refresh(), 2000);
-            this.onSetTimeout = null;
-          }, 100);
+          await this.dweloAPI.setDimmerState(true, this.accessory.context.device.uid);
+          this.log.debug('Dimmer state was set to: ON (from OnSet)');
         } else { // Turning Off
           await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
           this.log.debug('Dimmer state was set to: OFF');
-          setTimeout(() => this.refresh(), 2000);
         }
+        setTimeout(() => this.refresh(), 2000);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness)
       .onGet(() => {
-        const isOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value as boolean;
-        return isOn ? 100 : 0;
+        // Return the last known brightness value
+        return this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value;
       })
       .onSet(async (value) => {
         if (this.onSetTimeout) {
@@ -53,9 +49,6 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         if (brightness === 0) {
           await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
           this.log.debug(`Dimmer set to OFF (brightness 0)`);
-        } else if (brightness === 100) {
-          await this.dweloAPI.setDimmerState(true, this.accessory.context.device.uid);
-          this.log.debug(`Dimmer set to ON (brightness 100)`);
         } else {
           await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
           this.log.debug(`Dimmer brightness was set to: ${brightness}`);
@@ -69,18 +62,12 @@ export class DweloDimmerAccessory extends StatefulAccessory {
   async updateState(sensors: Sensor[]): Promise<void> {
     const lightSensor = sensors.find(s => s.sensorType === 'light');
     const isOn = lightSensor?.value === 'on';
-    let brightness = 0;
 
-    if (lightSensor && lightSensor.value !== 'off') {
-      brightness = parseInt(lightSensor.value, 10);
-      if (isNaN(brightness) || brightness === 0) {
-        brightness = 100;
-      }
-    }
-
+    // We only get on/off state from the API, not the brightness.
+    // So, we only update the On characteristic.
+    // The brightness will be preserved at its last known value in HomeKit.
     this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
-    this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(brightness);
 
-    this.log.debug(`Dimmer state updated to: ${isOn ? 'ON' : 'OFF'}, Brightness: ${brightness}`);
+    this.log.debug(`Dimmer state updated to: ${isOn ? 'ON' : 'OFF'}`);
   }
 }
