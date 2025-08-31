@@ -27,7 +27,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       .onSet(async (value) => {
         await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
         this.log.debug(`Thermostat mode was set to: ${value}`);
-        this.refresh();
+        setTimeout(() => this.refresh(), 2000);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature)
@@ -61,7 +61,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
         await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.uid);
         this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F`);
-        this.refresh();
+        setTimeout(() => this.refresh(), 2000);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)

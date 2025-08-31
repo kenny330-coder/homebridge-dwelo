@@ -29,13 +29,13 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           this.onSetTimeout = setTimeout(() => {
             this.dweloAPI.setDimmerState(true, this.accessory.context.device.uid);
             this.log.debug('Dimmer state was set to: ON (from OnSet)');
-            this.refresh();
+            setTimeout(() => this.refresh(), 2000);
             this.onSetTimeout = null;
           }, 100);
         } else { // Turning Off
           await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
           this.log.debug('Dimmer state was set to: OFF');
-          this.refresh();
+          setTimeout(() => this.refresh(), 2000);
         }
       });
 
@@ -60,7 +60,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
           this.log.debug(`Dimmer brightness was set to: ${brightness}`);
         }
-        this.refresh();
+        setTimeout(() => this.refresh(), 2000);
       });
 
     this.log.info(`Dwelo Dimmer '${this.accessory.displayName}' created!`);
