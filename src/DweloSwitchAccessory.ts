@@ -15,6 +15,12 @@ export class DweloSwitchAccessory extends StatefulAccessory {
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(log, api, dweloAPI, accessory);
 
+    // Remove the old Switch service if it exists
+    const switchService = this.accessory.getService(this.api.hap.Service.Switch);
+    if (switchService) {
+      this.accessory.removeService(switchService);
+    }
+
     this.service = this.accessory.getService(this.api.hap.Service.Lightbulb) || this.accessory.addService(this.api.hap.Service.Lightbulb);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.On)

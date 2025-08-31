@@ -25,9 +25,18 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         return this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
       })
       .onSet(async (value) => {
-        await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
-        this.log.debug(`Thermostat mode was set to: ${value}`);
-        setTimeout(() => this.refresh(), 5000);
+        try {
+          const response = await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
+          if (response.status === 200) {
+            this.log.debug(`Thermostat mode was set to: ${this.modeToString(value as number)}`);
+          } else {
+            this.log.error(`Failed to set thermostat mode. Status: ${response.status}`);
+            setTimeout(() => this.refresh(), 1000);
+          }
+        } catch (error) {
+          this.log.error('Error setting thermostat mode:', error);
+          setTimeout(() => this.refresh(), 1000);
+        }
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature)
@@ -70,9 +79,18 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         }
 
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
-        await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.uid);
-        this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F for mode ${mode}`);
-        setTimeout(() => this.refresh(), 5000);
+        try {
+          const response = await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.uid);
+          if (response.status === 200) {
+            this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F for mode ${mode}`);
+          } else {
+            this.log.error(`Failed to set thermostat temperature. Status: ${response.status}`);
+            setTimeout(() => this.refresh(), 1000);
+          }
+        } catch (error) {
+          this.log.error('Error setting thermostat temperature:', error);
+          setTimeout(() => this.refresh(), 1000);
+        }
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)
@@ -86,7 +104,9 @@ export class DweloThermostatAccessory extends StatefulAccessory {
 
   async updateState(sensors: Sensor[]): Promise<void> {
     const currentTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'temperature')?.value || '0');
-    const targetTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature')?.value || '0');
+    let targetTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature')?.value || '0');
+    const targetTemperatureLowF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature_low')?.value || '0');
+    const targetTemperatureHighF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature_high')?.value || '0');
     const heatingStatus = sensors.find(s => s.sensorType === 'heating_status')?.value;
     const coolingStatus = sensors.find(s => s.sensorType === 'cooling_status')?.value;
     const targetMode = sensors.find(s => s.sensorType === 'target_mode')?.value;
@@ -113,7 +133,60 @@ export class DweloThermostatAccessory extends StatefulAccessory {
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperatureC);
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetHeatingCoolingState);
 
-    if (targetTemperatureF > 0) {
+    if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.OFF) {
+      // When the thermostat is off, set the target temperature to the current temperature
+      this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(currentTemperatureC);
+    } else if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO) {
+      if (targetTemperatureLowF > 0 && targetTemperatureHighF > 0) {
+        // In auto mode, set the target temperature to the average of the low and high setpoints
+        const targetTemperatureC = this.fahrenheitToCelsius((targetTemperatureLowF + targetTemperatureHighF) / 2);
+        this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
+      }
+    } else if (targetTemperatureF > 0) {
+      const targetTemperatureC = this.fahrenheitToCelsius(targetTemperatureF);
+      async updateState(sensors: Sensor[]): Promise<void> {
+    const currentTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'temperature')?.value || '0');
+    const state = sensors.find(s => s.sensorType === 'state')?.value;
+    const targetMode = sensors.find(s => s.sensorType === 'mode')?.value;
+    const setToCoolF = parseFloat(sensors.find(s => s.sensorType === 'setToCool')?.value || '0');
+    const setToHeatF = parseFloat(sensors.find(s => s.sensorType === 'setToHeat')?.value || '0');
+
+    let currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.OFF;
+    if (state === 'heat') {
+      currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.HEAT;
+    } else if (state === 'cool') {
+      currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.COOL;
+    }
+
+    let targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.OFF;
+    if (targetMode === 'heat') {
+      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT;
+    } else if (targetMode === 'cool') {
+      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.COOL;
+    } else if (targetMode === 'auto') {
+      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO;
+    }
+
+    const currentTemperatureC = this.fahrenheitToCelsius(currentTemperatureF);
+
+    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
+    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperatureC);
+    this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetHeatingCoolingState);
+
+    let targetTemperatureF = 0;
+    if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT) {
+      targetTemperatureF = setToHeatF;
+    } else if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.COOL) {
+      targetTemperatureF = setToCoolF;
+    } else if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO) {
+      if (setToHeatF > 0 && setToCoolF > 0) {
+        targetTemperatureF = (setToHeatF + setToCoolF) / 2;
+      }
+    }
+
+    if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.OFF) {
+      this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(currentTemperatureC);
+    } else if (targetTemperatureF > 0) {
       const targetTemperatureC = this.fahrenheitToCelsius(targetTemperatureF);
       this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
     }
