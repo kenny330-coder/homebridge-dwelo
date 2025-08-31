@@ -104,48 +104,6 @@ export class DweloThermostatAccessory extends StatefulAccessory {
 
   async updateState(sensors: Sensor[]): Promise<void> {
     const currentTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'temperature')?.value || '0');
-    let targetTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature')?.value || '0');
-    const targetTemperatureLowF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature_low')?.value || '0');
-    const targetTemperatureHighF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature_high')?.value || '0');
-    const heatingStatus = sensors.find(s => s.sensorType === 'heating_status')?.value;
-    const coolingStatus = sensors.find(s => s.sensorType === 'cooling_status')?.value;
-    const targetMode = sensors.find(s => s.sensorType === 'target_mode')?.value;
-
-    let currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.OFF;
-    if (heatingStatus === 'on') {
-      currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.HEAT;
-    } else if (coolingStatus === 'on') {
-      currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.COOL;
-    }
-
-    let targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.OFF;
-    if (targetMode === 'heat') {
-      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT;
-    } else if (targetMode === 'cool') {
-      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.COOL;
-    } else if (targetMode === 'auto') {
-      targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO;
-    }
-
-    const currentTemperatureC = this.fahrenheitToCelsius(currentTemperatureF);
-
-    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
-    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperatureC);
-    this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetHeatingCoolingState);
-
-    if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.OFF) {
-      // When the thermostat is off, set the target temperature to the current temperature
-      this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(currentTemperatureC);
-    } else if (targetHeatingCoolingState === this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO) {
-      if (targetTemperatureLowF > 0 && targetTemperatureHighF > 0) {
-        // In auto mode, set the target temperature to the average of the low and high setpoints
-        const targetTemperatureC = this.fahrenheitToCelsius((targetTemperatureLowF + targetTemperatureHighF) / 2);
-        this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
-      }
-    } else if (targetTemperatureF > 0) {
-      const targetTemperatureC = this.fahrenheitToCelsius(targetTemperatureF);
-      async updateState(sensors: Sensor[]): Promise<void> {
-    const currentTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'temperature')?.value || '0');
     const state = sensors.find(s => s.sensorType === 'state')?.value;
     const targetMode = sensors.find(s => s.sensorType === 'mode')?.value;
     const setToCoolF = parseFloat(sensors.find(s => s.sensorType === 'setToCool')?.value || '0');
