@@ -45,6 +45,7 @@ export class DweloLockAccessory extends StatefulAccessory {
     this.log.info(`Setting lock to: ${value}`);
     await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);
     this.log.info('Lock toggle completed');
+    this.refresh();
   }
 
   private toLockState(sensors: Sensor[]) {

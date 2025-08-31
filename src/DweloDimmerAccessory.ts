@@ -7,10 +7,9 @@ import {
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 
-
-
 export class DweloDimmerAccessory extends StatefulAccessory {
   private readonly service: Service;
+  private onSetTimeout: NodeJS.Timeout | null = null;
 
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(log, api, dweloAPI, accessory);
@@ -22,18 +21,34 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
       .onSet(async (value) => {
-        await this.dweloAPI.setDimmerState(value as boolean, this.accessory.context.device.uid);
-        this.log.debug(`Dimmer state was set to: ${value ? 'ON' : 'OFF'}`);
+        if (this.onSetTimeout) {
+          clearTimeout(this.onSetTimeout);
+          this.onSetTimeout = null;
+        }
+        if (value) { // Turning On
+          this.onSetTimeout = setTimeout(() => {
+            this.dweloAPI.setDimmerState(true, this.accessory.context.device.uid);
+            this.log.debug('Dimmer state was set to: ON (from OnSet)');
+            this.refresh();
+            this.onSetTimeout = null;
+          }, 100);
+        } else { // Turning Off
+          await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
+          this.log.debug('Dimmer state was set to: OFF');
+          this.refresh();
+        }
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness)
       .onGet(() => {
-        // Return the current brightness. For now, we'll assume 100 if on, 0 if off.
-        // In a real scenario, you'd want to fetch the actual brightness from the device.
         const isOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value as boolean;
         return isOn ? 100 : 0;
       })
       .onSet(async (value) => {
+        if (this.onSetTimeout) {
+          clearTimeout(this.onSetTimeout);
+          this.onSetTimeout = null;
+        }
         const brightness = value as number;
         if (brightness === 0) {
           await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
@@ -45,9 +60,8 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
           this.log.debug(`Dimmer brightness was set to: ${brightness}`);
         }
+        this.refresh();
       });
-
-    
 
     this.log.info(`Dwelo Dimmer '${this.accessory.displayName}' created!`);
   }
@@ -58,11 +72,9 @@ export class DweloDimmerAccessory extends StatefulAccessory {
     let brightness = 0;
 
     if (lightSensor && lightSensor.value !== 'off') {
-      // Assuming the light sensor value can also be a number for brightness
-      // or that 'on' implies full brightness if no specific value is given.
       brightness = parseInt(lightSensor.value, 10);
       if (isNaN(brightness) || brightness === 0) {
-        brightness = 100; // Default to 100 if 'on' but no specific brightness value
+        brightness = 100;
       }
     }
 

@@ -27,6 +27,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       .onSet(async (value) => {
         await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
         this.log.debug(`Thermostat mode was set to: ${value}`);
+        this.refresh();
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature)
@@ -56,8 +57,11 @@ export class DweloThermostatAccessory extends StatefulAccessory {
             this.log.warn('Cannot set target temperature when thermostat is off or in an unsupported mode.');
             throw new Error('Unsupported thermostat mode for setting temperature.'); // Throw error instead of callback
         }
-        await this.dweloAPI.setThermostatTemperature(mode, value as number, this.accessory.context.device.uid);
-        this.log.debug(`Thermostat temperature was set to: ${value}`);
+        const targetTemperatureC = value as number;
+        const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
+        await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.uid);
+        this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F`);
+        this.refresh();
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)
@@ -70,10 +74,10 @@ export class DweloThermostatAccessory extends StatefulAccessory {
   }
 
   async updateState(sensors: Sensor[]): Promise<void> {
-    const currentTemperature = sensors.find(s => s.sensorType === 'temperature')?.value;
+    const currentTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'temperature')?.value || '0');
     const heatingStatus = sensors.find(s => s.sensorType === 'heating_status')?.value;
     const coolingStatus = sensors.find(s => s.sensorType === 'cooling_status')?.value;
-    const targetTemperature = sensors.find(s => s.sensorType === 'target_temperature')?.value;
+    const targetTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature')?.value || '0');
     const targetMode = sensors.find(s => s.sensorType === 'target_mode')?.value;
 
     let currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.OFF;
@@ -92,12 +96,15 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       targetHeatingCoolingState = this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO;
     }
 
-    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
-    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(parseFloat(currentTemperature || '0'));
-    this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetHeatingCoolingState);
-    this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(parseFloat(targetTemperature || '0'));
+    const currentTemperatureC = this.fahrenheitToCelsius(currentTemperatureF);
+    const targetTemperatureC = this.fahrenheitToCelsius(targetTemperatureF);
 
-    this.log.debug(`Thermostat state updated to: current temperature: ${currentTemperature}, target temperature: ${targetTemperature}, target mode: ${targetMode}`);
+    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
+    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperatureC);
+    this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetHeatingCoolingState);
+    this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
+
+    this.log.debug(`Thermostat state updated to: current temperature: ${currentTemperatureF}F, target temperature: ${targetTemperatureF}F, target mode: ${targetMode}`);
   }
 
   private modeToString(mode: number): string {
@@ -113,5 +120,13 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       default:
         return 'off';
     }
+  }
+
+  private fahrenheitToCelsius(fahrenheit: number): number {
+    return (fahrenheit - 32) * 5 / 9;
+  }
+
+  private celsiusToFahrenheit(celsius: number): number {
+    return Math.round((celsius * 9 / 5) + 32);
   }
 }

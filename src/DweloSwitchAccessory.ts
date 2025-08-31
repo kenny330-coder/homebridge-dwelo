@@ -22,15 +22,17 @@ export class DweloSwitchAccessory extends StatefulAccessory {
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
       .onSet(async (value) => {
-        await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
+        await this.dweloAPI.setDimmerState(value as boolean, this.accessory.context.device.uid);
         this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
+        this.refresh();
       });
 
     this.log.info(`Dwelo Switch '${this.accessory.displayName}' created!`);
   }
 
   async updateState(sensors: Sensor[]): Promise<void> {
-    const isOn = sensors[0]?.value === 'on';
+    const switchSensor = sensors.find(s => s.sensorType === 'light');
+    const isOn = switchSensor?.value === 'on';
     this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
     this.log.debug(`Switch state updated to: ${isOn ? 'ON' : 'OFF'}`);
   }

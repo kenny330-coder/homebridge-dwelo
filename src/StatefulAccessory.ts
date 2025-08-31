@@ -10,4 +10,9 @@ export abstract class StatefulAccessory {
   ) { }
 
   abstract updateState(sensors: Sensor[]): Promise<void>;
+
+  public async refresh(): Promise<void> {
+    const sensors = await this.dweloAPI.sensors(this.accessory.context.device.uid);
+    await this.updateState(sensors);
+  }
 }

@@ -9,7 +9,7 @@ import { DweloDimmerAccessory } from './DweloDimmerAccessory';
 import { DweloThermostatAccessory } from './DweloThermostatAccessory';
 import { StatefulAccessory } from './StatefulAccessory';
 
-const POLLING_INTERVAL = 60 * 1000; // 1 minute
+const POLLING_INTERVAL = 30 * 1000; // 10 seconds
 
 export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   private readonly dweloAPI: DweloAPI;
