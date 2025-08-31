@@ -24,7 +24,7 @@ export class DweloSwitchAccessory extends StatefulAccessory {
       .onSet(async (value) => {
         await this.dweloAPI.setDimmerState(value as boolean, this.accessory.context.device.uid);
         this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
-        setTimeout(() => this.refresh(), 2000);
+        setTimeout(() => this.refresh(), 5000);
       });
 
     this.log.info(`Dwelo Switch '${this.accessory.displayName}' created!`);

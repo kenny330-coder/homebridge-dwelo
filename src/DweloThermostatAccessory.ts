@@ -27,7 +27,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       .onSet(async (value) => {
         await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
         this.log.debug(`Thermostat mode was set to: ${value}`);
-        setTimeout(() => this.refresh(), 2000);
+        setTimeout(() => this.refresh(), 5000);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature)
@@ -38,7 +38,9 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         return this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).value;
       })
       .onSet(async (value) => {
-        // Use the current target heating/cooling state to determine the mode for setting temperature
+        const targetTemperatureC = value as number;
+        this.log.info(`Received target temperature from HomeKit: ${targetTemperatureC}°C`);
+
         const currentTargetMode = this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
         let mode: string;
         switch (currentTargetMode) {
@@ -49,19 +51,19 @@ export class DweloThermostatAccessory extends StatefulAccessory {
             mode = 'cool';
             break;
           case this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO:
-            // For auto, we might need to decide between heat/cool based on current temp vs target
-            // For simplicity, let's default to 'cool' if setting a target temperature in auto mode.
             mode = 'cool';
             break;
           default:
             this.log.warn('Cannot set target temperature when thermostat is off or in an unsupported mode.');
-            throw new Error('Unsupported thermostat mode for setting temperature.'); // Throw error instead of callback
+            throw new Error('Unsupported thermostat mode for setting temperature.');
         }
-        const targetTemperatureC = value as number;
+
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
+        this.log.info(`Converted to Fahrenheit for Dwelo API: ${targetTemperatureF}°F`);
+
         await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.uid);
         this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F`);
-        setTimeout(() => this.refresh(), 2000);
+        setTimeout(() => this.refresh(), 5000);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)
@@ -75,9 +77,11 @@ export class DweloThermostatAccessory extends StatefulAccessory {
 
   async updateState(sensors: Sensor[]): Promise<void> {
     const currentTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'temperature')?.value || '0');
+    const targetTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature')?.value || '0');
+    this.log.info(`Received temperatures from Dwelo API: current=${currentTemperatureF}°F, target=${targetTemperatureF}°F`);
+
     const heatingStatus = sensors.find(s => s.sensorType === 'heating_status')?.value;
     const coolingStatus = sensors.find(s => s.sensorType === 'cooling_status')?.value;
-    const targetTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature')?.value || '0');
     const targetMode = sensors.find(s => s.sensorType === 'target_mode')?.value;
 
     let currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.OFF;
@@ -98,6 +102,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
 
     const currentTemperatureC = this.fahrenheitToCelsius(currentTemperatureF);
     const targetTemperatureC = this.fahrenheitToCelsius(targetTemperatureF);
+    this.log.info(`Converted to Celsius for HomeKit: current=${currentTemperatureC}°C, target=${targetTemperatureC}°C`);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperatureC);

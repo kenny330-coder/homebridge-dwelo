@@ -26,13 +26,18 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           this.onSetTimeout = null;
         }
         if (value) { // Turning On
-          await this.dweloAPI.setDimmerState(true, this.accessory.context.device.uid);
-          this.log.debug('Dimmer state was set to: ON (from OnSet)');
+          let lastBrightness = this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value as number;
+          if (lastBrightness === 0) {
+            lastBrightness = 100; // Default to 100 if last brightness was 0
+          }
+          this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(lastBrightness);
+          await this.dweloAPI.setDimmerBrightness(lastBrightness, this.accessory.context.device.uid);
+          this.log.debug(`Dimmer state was set to: ON with brightness ${lastBrightness}`);
         } else { // Turning Off
           await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
           this.log.debug('Dimmer state was set to: OFF');
         }
-        setTimeout(() => this.refresh(), 2000);
+        setTimeout(() => this.refresh(), 5000);
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness)
@@ -53,7 +58,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
           this.log.debug(`Dimmer brightness was set to: ${brightness}`);
         }
-        setTimeout(() => this.refresh(), 2000);
+        setTimeout(() => this.refresh(), 5000);
       });
 
     this.log.info(`Dwelo Dimmer '${this.accessory.displayName}' created!`);
