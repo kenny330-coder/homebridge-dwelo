@@ -32,7 +32,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
               lastBrightness = 100; // Default to 100 if last brightness was 0
             }
             const response = await this.dweloAPI.setDimmerBrightness(lastBrightness, this.accessory.context.device.uid);
-            if (response.status === 200) {
+            if (response.status === 200 || response.status === 202) {
               this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(lastBrightness);
               this.log.debug(`Dimmer state was set to: ON with brightness ${lastBrightness}`);
             } else {
@@ -42,7 +42,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
             }
           } else { // Turning Off
             const response = await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
-            if (response.status === 200) {
+            if (response.status === 200 || response.status === 202) {
               this.log.debug('Dimmer state was set to: OFF');
             } else {
               this.log.error(`Failed to set dimmer state. Status: ${response.status}`);
@@ -71,7 +71,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         try {
           if (brightness === 0) {
             const response = await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
-            if (response.status === 200) {
+            if (response.status === 200 || response.status === 202) {
               this.log.debug(`Dimmer set to OFF (brightness 0)`);
             } else {
               this.log.error(`Failed to set dimmer state. Status: ${response.status}`);
@@ -80,7 +80,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
             }
           } else {
             const response = await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
-            if (response.status === 200) {
+            if (response.status === 200 || response.status === 202) {
               this.log.debug(`Dimmer brightness was set to: ${brightness}`);
             } else {
               this.log.error(`Failed to set dimmer brightness. Status: ${response.status}`);

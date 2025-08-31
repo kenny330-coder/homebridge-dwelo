@@ -30,7 +30,7 @@ export class DweloSwitchAccessory extends StatefulAccessory {
       .onSet(async (value) => {
         try {
           const response = await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
-          if (response.status === 200) {
+          if (response.status === 200 || response.status === 202) {
             this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
           } else {
             this.log.error(`Failed to set switch state. Status: ${response.status}`);

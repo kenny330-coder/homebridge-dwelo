@@ -27,7 +27,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       .onSet(async (value) => {
         try {
           const response = await this.dweloAPI.setThermostatMode(this.modeToString(value as number), this.accessory.context.device.uid);
-          if (response.status === 200) {
+          if (response.status === 200 || response.status === 202) {
             this.log.debug(`Thermostat mode was set to: ${this.modeToString(value as number)}`);
           } else {
             this.log.error(`Failed to set thermostat mode. Status: ${response.status}`);
@@ -81,7 +81,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
         try {
           const response = await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.uid);
-          if (response.status === 200) {
+          if (response.status === 200 || response.status === 202) {
             this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F for mode ${mode}`);
           } else {
             this.log.error(`Failed to set thermostat temperature. Status: ${response.status}`);
