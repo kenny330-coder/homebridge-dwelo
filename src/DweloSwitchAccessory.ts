@@ -15,16 +15,25 @@ export class DweloSwitchAccessory extends StatefulAccessory {
   constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(log, api, dweloAPI, accessory);
 
-    this.service = this.accessory.getService(this.api.hap.Service.Switch) || this.accessory.addService(this.api.hap.Service.Switch);
+    this.service = this.accessory.getService(this.api.hap.Service.Lightbulb) || this.accessory.addService(this.api.hap.Service.Lightbulb);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.On)
       .onGet(() => {
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
       .onSet(async (value) => {
-        await this.dweloAPI.setDimmerState(value as boolean, this.accessory.context.device.uid);
-        this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
-        setTimeout(() => this.refresh(), 5000);
+        try {
+          const response = await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
+          if (response.status === 200) {
+            this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
+          } else {
+            this.log.error(`Failed to set switch state. Status: ${response.status}`);
+            setTimeout(() => this.refresh(), 1000);
+          }
+        } catch (error) {
+          this.log.error('Error setting switch state:', error);
+          setTimeout(() => this.refresh(), 1000);
+        }
       });
 
     this.log.info(`Dwelo Switch '${this.accessory.displayName}' created!`);
