@@ -39,30 +39,39 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       })
       .onSet(async (value) => {
         const targetTemperatureC = value as number;
-        this.log.info(`Received target temperature from HomeKit: ${targetTemperatureC}°C`);
-
-        const currentTargetMode = this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
+        let currentTargetMode = this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
         let mode: string;
-        switch (currentTargetMode) {
-          case this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT:
+
+        if (currentTargetMode === this.api.hap.Characteristic.TargetHeatingCoolingState.OFF) {
+          this.log.info('Thermostat is off. Determining mode based on temperature.');
+          const currentTemperatureC = this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).value as number;
+          if (targetTemperatureC > currentTemperatureC) {
             mode = 'heat';
-            break;
-          case this.api.hap.Characteristic.TargetHeatingCoolingState.COOL:
+            this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT);
+          } else {
             mode = 'cool';
-            break;
-          case this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO:
-            mode = 'cool';
-            break;
-          default:
-            this.log.warn('Cannot set target temperature when thermostat is off or in an unsupported mode.');
-            throw new Error('Unsupported thermostat mode for setting temperature.');
+            this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(this.api.hap.Characteristic.TargetHeatingCoolingState.COOL);
+          }
+        } else {
+            switch (currentTargetMode) {
+              case this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT:
+                mode = 'heat';
+                break;
+              case this.api.hap.Characteristic.TargetHeatingCoolingState.COOL:
+                mode = 'cool';
+                break;
+              case this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO:
+                mode = 'cool';
+                break;
+              default:
+                this.log.warn(`Cannot set target temperature in current mode: ${currentTargetMode}`);
+                throw new Error('Unsupported thermostat mode for setting temperature.');
+            }
         }
 
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
-        this.log.info(`Converted to Fahrenheit for Dwelo API: ${targetTemperatureF}°F`);
-
         await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.uid);
-        this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F`);
+        this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F for mode ${mode}`);
         setTimeout(() => this.refresh(), 5000);
       });
 
@@ -78,8 +87,6 @@ export class DweloThermostatAccessory extends StatefulAccessory {
   async updateState(sensors: Sensor[]): Promise<void> {
     const currentTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'temperature')?.value || '0');
     const targetTemperatureF = parseFloat(sensors.find(s => s.sensorType === 'target_temperature')?.value || '0');
-    this.log.info(`Received temperatures from Dwelo API: current=${currentTemperatureF}°F, target=${targetTemperatureF}°F`);
-
     const heatingStatus = sensors.find(s => s.sensorType === 'heating_status')?.value;
     const coolingStatus = sensors.find(s => s.sensorType === 'cooling_status')?.value;
     const targetMode = sensors.find(s => s.sensorType === 'target_mode')?.value;
@@ -101,13 +108,15 @@ export class DweloThermostatAccessory extends StatefulAccessory {
     }
 
     const currentTemperatureC = this.fahrenheitToCelsius(currentTemperatureF);
-    const targetTemperatureC = this.fahrenheitToCelsius(targetTemperatureF);
-    this.log.info(`Converted to Celsius for HomeKit: current=${currentTemperatureC}°C, target=${targetTemperatureC}°C`);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperatureC);
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetHeatingCoolingState);
-    this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
+
+    if (targetTemperatureF > 0) {
+      const targetTemperatureC = this.fahrenheitToCelsius(targetTemperatureF);
+      this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
+    }
 
     this.log.debug(`Thermostat state updated to: current temperature: ${currentTemperatureF}F, target temperature: ${targetTemperatureF}F, target mode: ${targetMode}`);
   }
