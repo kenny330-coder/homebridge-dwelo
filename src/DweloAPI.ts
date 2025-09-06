@@ -138,6 +138,7 @@ export class DweloAPI {
       if (this.commandQueue.length > 0) {
         const { path, config, resolve, reject } = this.commandQueue.shift()!;
         try {
+          console.log(`Dwelo API Request: ${config.method ?? 'GET'} ${path}`, { params: config.params, data: config.data });
           const response = await axios({
             url: 'https://api.dwelo.com' + path,
             method: config.method ?? 'GET',
@@ -148,6 +149,7 @@ export class DweloAPI {
               Authorization: `Token ${this.token} `,
             },
           });
+          console.log('Dwelo API Response:', response.data);
           resolve(response);
         } catch (error) {
           console.error('Dwelo API request failed:', error);

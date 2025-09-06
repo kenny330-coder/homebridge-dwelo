@@ -24,7 +24,8 @@ export class DweloSwitchAccessory extends StatefulAccessory {
     this.service = this.accessory.getService(this.api.hap.Service.Lightbulb) || this.accessory.addService(this.api.hap.Service.Lightbulb);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.On)
-      .onGet(() => {
+      .onGet(async () => {
+        await this.refresh();
         return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
       })
       .onSet(async (value) => {
