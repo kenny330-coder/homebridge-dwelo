@@ -33,6 +33,7 @@ export class DweloSwitchAccessory extends StatefulAccessory {
           const response = await this.dweloAPI.setSwitchState(value as boolean, this.accessory.context.device.uid);
           if (response.status === 200 || response.status === 202) {
             this.log.debug(`Switch state was set to: ${value ? 'ON' : 'OFF'}`);
+            this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(value as boolean);
           } else {
             this.log.error(`Failed to set switch state. Status: ${response.status}`);
             setTimeout(() => this.refresh(), 1000);
