@@ -36,11 +36,9 @@ export class DweloSwitchAccessory extends StatefulAccessory {
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(value as boolean);
           } else {
             this.log.error(`Failed to set switch state. Status: ${response.status}`);
-            setTimeout(() => this.refresh(), 1000);
           }
         } catch (error) {
           this.log.error('Error setting switch state:', error);
-          setTimeout(() => this.refresh(), 1000);
         }
       });
 

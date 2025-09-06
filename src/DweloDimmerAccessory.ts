@@ -37,25 +37,20 @@ export class DweloDimmerAccessory extends StatefulAccessory {
               this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
               this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(lastBrightness);
               this.log.debug(`Dimmer state was set to: ON with brightness ${lastBrightness}`);
-              setTimeout(() => this.refresh(), 1000);
             } else {
               this.log.error(`Failed to set dimmer brightness. Status: ${response.status}`);
-              setTimeout(() => this.refresh(), 1000);
             }
           } else { // Turning Off
             const response = await this.dweloAPI.setDimmerState(false, this.accessory.context.device.uid);
             if (response.status === 200 || response.status === 202) {
               this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(false);
               this.log.debug('Dimmer state was set to: OFF');
-              setTimeout(() => this.refresh(), 1000);
             } else {
               this.log.error(`Failed to set dimmer state. Status: ${response.status}`);
-              setTimeout(() => this.refresh(), 1000);
             }
           }
         } catch (error) {
           this.log.error('Error setting dimmer state:', error);
-          setTimeout(() => this.refresh(), 1000);
         }
       });
 
@@ -77,10 +72,8 @@ export class DweloDimmerAccessory extends StatefulAccessory {
               this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(false);
               this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(0);
               this.log.debug(`Dimmer set to OFF (brightness 0)`);
-              setTimeout(() => this.refresh(), 1000);
             } else {
               this.log.error(`Failed to set dimmer state. Status: ${response.status}`);
-              setTimeout(() => this.refresh(), 1000);
             }
           } else {
             const response = await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.uid);
@@ -88,15 +81,12 @@ export class DweloDimmerAccessory extends StatefulAccessory {
               this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
               this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(brightness);
               this.log.debug(`Dimmer brightness was set to: ${brightness}`);
-              setTimeout(() => this.refresh(), 1000);
             } else {
               this.log.error(`Failed to set dimmer brightness. Status: ${response.status}`);
-              setTimeout(() => this.refresh(), 1000);
             }
           }
         } catch (error) {
           this.log.error('Error setting dimmer brightness:', error);
-          setTimeout(() => this.refresh(), 1000);
         }
       });
 
