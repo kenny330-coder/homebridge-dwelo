@@ -4,10 +4,10 @@ import {
   Logging,
   PlatformAccessory,
   Service,
-  CharacteristicSetCallback,
 } from 'homebridge';
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
+import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
 
 
@@ -15,8 +15,8 @@ export class DweloLockAccessory extends StatefulAccessory {
   private readonly lockService: Service;
   private readonly batteryService: Service;
 
-  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
-    super(log, api, dweloAPI, accessory);
+  constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
+    super(platform, log, api, dweloAPI, accessory);
 
     this.lockService = this.accessory.getService(this.api.hap.Service.LockMechanism) || this.accessory.addService(this.api.hap.Service.LockMechanism);
 

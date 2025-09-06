@@ -2,19 +2,22 @@ import { API, DynamicPlatformPlugin, PlatformConfig, Logging, PlatformAccessory 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { version } from '../package.json';
 
-import { DweloAPI } from './DweloAPI';
+import { DweloAPI, Sensor } from './DweloAPI';
 import { DweloLockAccessory } from './DweloLockAccessory';
 import { DweloSwitchAccessory } from './DweloSwitchAccessory';
 import { DweloDimmerAccessory } from './DweloDimmerAccessory';
 import { DweloThermostatAccessory } from './DweloThermostatAccessory';
 import { StatefulAccessory } from './StatefulAccessory';
 
-const POLLING_INTERVAL = 30 * 1000; // 10 seconds
+const POLLING_INTERVAL = 30 * 1000; // 30 seconds
 
 export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   private readonly dweloAPI: DweloAPI;
   public readonly accessories: PlatformAccessory[] = [];
   public readonly accessoryHandlers: StatefulAccessory[] = [];
+  private lastSensorUpdateTime = 0;
+  private sensors: Sensor[] = [];
+  private sensorPromise: Promise<Sensor[]> | null = null;
 
   constructor(
     public readonly log: Logging,
@@ -62,16 +65,16 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
     let accessoryHandler;
     switch (accessory.context.device.deviceType) {
       case 'switch':
-        accessoryHandler = new DweloSwitchAccessory(this.log, this.api, this.dweloAPI, accessory);
+        accessoryHandler = new DweloSwitchAccessory(this, this.log, this.api, this.dweloAPI, accessory);
         break;
       case 'lock':
-        accessoryHandler = new DweloLockAccessory(this.log, this.api, this.dweloAPI, accessory);
+        accessoryHandler = new DweloLockAccessory(this, this.log, this.api, this.dweloAPI, accessory);
         break;
       case 'dimmer':
-        accessoryHandler = new DweloDimmerAccessory(this.log, this.api, this.dweloAPI, accessory);
+        accessoryHandler = new DweloDimmerAccessory(this, this.log, this.api, this.dweloAPI, accessory);
         break;
       case 'thermostat':
-        accessoryHandler = new DweloThermostatAccessory(this.log, this.api, this.dweloAPI, accessory);
+        accessoryHandler = new DweloThermostatAccessory(this, this.log, this.api, this.dweloAPI, accessory);
         break;
       default:
         this.log.warn(`Support for Dwelo accessory type: ${accessory.context.device.deviceType} is not implemented`);
@@ -82,12 +85,26 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  updateAllAccessories() {
-    this.dweloAPI.sensors().then(sensors => {
-      for (const accessory of this.accessoryHandlers) {
-        const accessorySensors = sensors.filter(s => s.deviceId === accessory.accessory.context.device.uid);
-        accessory.updateState(accessorySensors);
-      }
-    });
+  async getSensors(): Promise<Sensor[]> {
+    const now = Date.now();
+    if (this.sensorPromise && (now - this.lastSensorUpdateTime < 2000)) {
+      this.log.debug('Using cached sensor data promise');
+      return this.sensorPromise;
+    }
+
+    this.log.debug('Refreshing sensor data');
+    this.lastSensorUpdateTime = now;
+    this.sensorPromise = this.dweloAPI.sensors();
+    this.sensors = await this.sensorPromise;
+    this.sensorPromise = null;
+    return this.sensors;
+  }
+
+  async updateAllAccessories() {
+    const sensors = await this.getSensors();
+    for (const accessory of this.accessoryHandlers) {
+      const accessorySensors = sensors.filter(s => s.deviceId === accessory.accessory.context.device.uid);
+      accessory.updateState(accessorySensors);
+    }
   }
 }

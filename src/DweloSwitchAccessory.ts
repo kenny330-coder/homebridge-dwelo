@@ -3,17 +3,17 @@ import {
   Logging,
   PlatformAccessory,
   Service,
-  CharacteristicSetCallback,
 } from 'homebridge';
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
+import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
 
 export class DweloSwitchAccessory extends StatefulAccessory {
   private readonly service: Service;
 
-  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
-    super(log, api, dweloAPI, accessory);
+  constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
+    super(platform, log, api, dweloAPI, accessory);
 
     // Remove the old Switch service if it exists
     const switchService = this.accessory.getService(this.api.hap.Service.Switch);

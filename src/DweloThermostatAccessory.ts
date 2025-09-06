@@ -6,14 +6,15 @@ import {
 } from 'homebridge';
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
+import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
 
 
 export class DweloThermostatAccessory extends StatefulAccessory {
   private readonly service: Service;
 
-  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
-    super(log, api, dweloAPI, accessory);
+  constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
+    super(platform, log, api, dweloAPI, accessory);
 
     this.service = this.accessory.getService(this.api.hap.Service.Thermostat) || this.accessory.addService(this.api.hap.Service.Thermostat);
 
@@ -31,11 +32,9 @@ export class DweloThermostatAccessory extends StatefulAccessory {
             this.log.debug(`Thermostat mode was set to: ${this.modeToString(value as number)}`);
           } else {
             this.log.error(`Failed to set thermostat mode. Status: ${response.status}`);
-            setTimeout(() => this.refresh(), 1000);
           }
         } catch (error) {
           this.log.error('Error setting thermostat mode:', error);
-          setTimeout(() => this.refresh(), 1000);
         }
       });
 
@@ -85,11 +84,9 @@ export class DweloThermostatAccessory extends StatefulAccessory {
             this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F for mode ${mode}`);
           } else {
             this.log.error(`Failed to set thermostat temperature. Status: ${response.status}`);
-            setTimeout(() => this.refresh(), 1000);
           }
         } catch (error) {
           this.log.error('Error setting thermostat temperature:', error);
-          setTimeout(() => this.refresh(), 1000);
         }
       });
 

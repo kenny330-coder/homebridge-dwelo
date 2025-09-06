@@ -6,13 +6,14 @@ import {
 } from 'homebridge';
 import { DweloAPI, Sensor } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
+import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
 export class DweloDimmerAccessory extends StatefulAccessory {
   private readonly service: Service;
   private onSetTimeout: NodeJS.Timeout | null = null;
 
-  constructor(log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
-    super(log, api, dweloAPI, accessory);
+  constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
+    super(platform, log, api, dweloAPI, accessory);
 
     this.service = this.accessory.getService(this.api.hap.Service.Lightbulb) || this.accessory.addService(this.api.hap.Service.Lightbulb);
 
