@@ -1,5 +1,5 @@
 import { API, Logging, PlatformAccessory } from 'homebridge';
-import { DweloAPI, Sensor } from './DweloAPI';
+import { DweloAPI, LightAndSwitch, Lock, Thermostat } from './DweloAPI';
 import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
 export abstract class StatefulAccessory {
@@ -11,11 +11,18 @@ export abstract class StatefulAccessory {
     public readonly accessory: PlatformAccessory,
   ) { }
 
-  abstract updateState(sensors: Sensor[]): Promise<void>;
+  abstract updateState(device: LightAndSwitch | Lock | Thermostat): Promise<void>;
 
   public async refresh(): Promise<void> {
-    const sensors = await this.platform.getSensors();
-    const accessorySensors = sensors.filter(s => s.deviceId === this.accessory.context.device.uid);
-    await this.updateState(accessorySensors);
+    const status = await this.platform.getRefreshedStatusData();
+    const devices = [
+      ...status['LIGHTS AND SWITCHES'],
+      ...status.LOCKS,
+      ...status.THERMOSTATS,
+    ];
+    const device = devices.find(d => d.device_id === this.accessory.context.device.device_id);
+    if (device) {
+      await this.updateState(device);
+    }
   }
 }

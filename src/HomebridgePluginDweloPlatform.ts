@@ -2,7 +2,7 @@ import { API, DynamicPlatformPlugin, PlatformConfig, Logging, PlatformAccessory 
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { version } from '../package.json';
 
-import { DweloAPI, Sensor } from './DweloAPI';
+import { DweloAPI, RefreshedStatus, LightAndSwitch, Lock, Thermostat } from './DweloAPI';
 import { DweloLockAccessory } from './DweloLockAccessory';
 import { DweloSwitchAccessory } from './DweloSwitchAccessory';
 import { DweloDimmerAccessory } from './DweloDimmerAccessory';
@@ -15,9 +15,9 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   private readonly dweloAPI: DweloAPI;
   public readonly accessories: PlatformAccessory[] = [];
   public readonly accessoryHandlers: StatefulAccessory[] = [];
-  private lastSensorUpdateTime = 0;
-  private sensors: Sensor[] = [];
-  private sensorPromise: Promise<Sensor[]> | null = null;
+  private lastRefreshedStatusTime = 0;
+  private refreshedStatus: RefreshedStatus | null = null;
+  private refreshedStatusPromise: Promise<RefreshedStatus> | null = null;
 
   constructor(
     public readonly log: Logging,
@@ -41,9 +41,15 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   }
 
   discoverDevices() {
-    this.dweloAPI.devices().then(devices => {
+    this.dweloAPI.getRefreshedStatus().then(status => {
+      const devices = [
+        ...status['LIGHTS AND SWITCHES'],
+        ...status.LOCKS,
+        ...status.THERMOSTATS,
+      ];
+
       for (const device of devices) {
-        const uuid = this.api.hap.uuid.generate(device.uid.toString());
+        const uuid = this.api.hap.uuid.generate(device.device_id.toString());
         const existingAccessory = this.accessories.find(accessory => accessory.UUID === uuid);
 
         if (existingAccessory) {
@@ -51,8 +57,8 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
           existingAccessory.context.device = device;
           this.createAccessory(existingAccessory);
         } else {
-          this.log.info('Adding new accessory:', device.givenName);
-          const accessory = new this.api.platformAccessory(device.givenName, uuid);
+          this.log.info('Adding new accessory:', device.name);
+          const accessory = new this.api.platformAccessory(device.name, uuid);
           accessory.context.device = device;
           this.createAccessory(accessory);
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
@@ -63,7 +69,7 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
 
   createAccessory(accessory: PlatformAccessory) {
     let accessoryHandler;
-    switch (accessory.context.device.deviceType) {
+    switch (accessory.context.device.device_type) {
       case 'switch':
         accessoryHandler = new DweloSwitchAccessory(this, this.log, this.api, this.dweloAPI, accessory);
         break;
@@ -77,7 +83,7 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
         accessoryHandler = new DweloThermostatAccessory(this, this.log, this.api, this.dweloAPI, accessory);
         break;
       default:
-        this.log.warn(`Support for Dwelo accessory type: ${accessory.context.device.deviceType} is not implemented`);
+        this.log.warn(`Support for Dwelo accessory type: ${accessory.context.device.device_type} is not implemented`);
         break;
     }
     if (accessoryHandler) {
@@ -85,26 +91,34 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
     }
   }
 
-  async getSensors(): Promise<Sensor[]> {
+  async getRefreshedStatusData(): Promise<RefreshedStatus> {
     const now = Date.now();
-    if (this.sensorPromise && (now - this.lastSensorUpdateTime < 2000)) {
-      this.log.debug('Using cached sensor data promise');
-      return this.sensorPromise;
+    if (this.refreshedStatusPromise && (now - this.lastRefreshedStatusTime < 2000)) {
+      this.log.debug('Using cached refreshed status data promise');
+      return this.refreshedStatusPromise;
     }
 
-    this.log.debug('Refreshing sensor data');
-    this.lastSensorUpdateTime = now;
-    this.sensorPromise = this.dweloAPI.sensors();
-    this.sensors = await this.sensorPromise;
-    this.sensorPromise = null;
-    return this.sensors;
+    this.log.debug('Refreshing status data');
+    this.lastRefreshedStatusTime = now;
+    this.refreshedStatusPromise = this.dweloAPI.getRefreshedStatus();
+    this.refreshedStatus = await this.refreshedStatusPromise;
+    this.refreshedStatusPromise = null;
+    return this.refreshedStatus;
   }
 
   async updateAllAccessories() {
-    const sensors = await this.getSensors();
+    const status = await this.getRefreshedStatusData();
+    const devices = [
+      ...status['LIGHTS AND SWITCHES'],
+      ...status.LOCKS,
+      ...status.THERMOSTATS,
+    ];
+
     for (const accessory of this.accessoryHandlers) {
-      const accessorySensors = sensors.filter(s => s.deviceId === accessory.accessory.context.device.uid);
-      accessory.updateState(accessorySensors);
+      const device = devices.find(d => d.device_id === accessory.accessory.context.device.device_id);
+      if (device) {
+        accessory.updateState(device);
+      }
     }
   }
 }

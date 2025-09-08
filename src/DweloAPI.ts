@@ -40,6 +40,190 @@ interface ListSensorsResponse extends ListResponse {
   results: Sensor[];
 }
 
+export interface RefreshedStatus {
+  GATEWAY: Gateway;
+  'LIGHTS AND SWITCHES': (LightAndSwitch)[];
+  LOCKS: (Lock)[];
+  THERMOSTATS: (Thermostat)[];
+}
+
+export interface Gateway {
+  device_id: number;
+  device_metadata: DeviceMetadata;
+  device_type: string;
+  model: null;
+  name: string;
+  sensors: GatewaySensors;
+}
+
+export interface DeviceMetadata {
+  commands: string[];
+  long_name: string;
+  power_source: string;
+  provisioning_type: string;
+  sensor_readings: string[];
+  short_name: string;
+  transport: string[];
+  type: string;
+  'wi-fi_ap': boolean;
+  'wi-fi_backhaul': boolean;
+}
+
+export interface GatewaySensors {
+  HubConnectionStatus: HubConnectionStatus;
+  WifiConnections: WifiConnection[];
+  WifiVisibleAps: WifiVisibleAp[];
+  heartbeat: Heartbeat;
+  network_interfaces: NetworkInterfaces;
+}
+
+export interface HubConnectionStatus {
+  lastCommunicationReceived: string;
+}
+
+export interface WifiConnection {
+  is_active: boolean;
+  ssid: string;
+  uuid: string;
+}
+
+export interface WifiVisibleAp {
+  security: string[];
+  ssid: string;
+  strength_percent: number;
+}
+
+export interface Heartbeat {
+  timestamp: string;
+}
+
+export interface NetworkInterfaces {
+  'cdc-wdm0': CdcWdm0;
+  eth0: Eth0;
+  wlan0: Wlan0;
+}
+
+export interface CdcWdm0 {
+  ip_address: string;
+  state: string;
+  type: string;
+}
+
+export interface Eth0 {
+  ip_address: string;
+  state: string;
+  type: string;
+}
+
+export interface Wlan0 {
+  ip_address: null;
+  state: string;
+  type: string;
+}
+
+export interface LightAndSwitch {
+  device_id: number;
+  device_metadata: LightAndSwitchDeviceMetadata;
+  device_type: string;
+  model: null;
+  name: string;
+  sensors: LightAndSwitchSensors;
+}
+
+export interface LightAndSwitchDeviceMetadata {
+  brand: string;
+  commands: string[];
+  highest_dim_value?: number;
+  load: string;
+  long_name: string;
+  lowest_dim_value?: number;
+  off_value?: number;
+  on_value?: number;
+  power_source: string;
+  provisioning_type: string;
+  recall_dim_value?: number;
+  sensor_readings: string[];
+  short_name: string;
+  transport: string[];
+  type: string;
+}
+
+export interface LightAndSwitchSensors {
+  Percent?: number;
+  Switch: string;
+}
+
+export interface Lock {
+  device_id: number;
+  device_metadata: LockDeviceMetadata;
+  device_type: string;
+  model: null;
+  name: string;
+  sensors: LockSensors;
+}
+
+export interface LockDeviceMetadata {
+  commands: string[];
+  keypad_buttons: number;
+  keyway: boolean;
+  long_name: string;
+  power_source: string;
+  provisioning_type: string;
+  sensor_readings: string[];
+  short_name: string;
+  transport: string[];
+  type: string;
+}
+
+export interface LockSensors {
+  BatteryLevel: number;
+  DoorLocked: string;
+  LockChange: string;
+}
+
+export interface Thermostat {
+  device_id: number;
+  device_metadata: ThermostatDeviceMetadata;
+  device_type: string;
+  model: null;
+  name: string;
+  sensors: ThermostatSensors;
+}
+
+export interface ThermostatDeviceMetadata {
+  brand: string;
+  commands: string[];
+  cool_setpoint_high: number;
+  cool_setpoint_low: number;
+  fan_modes: string[];
+  heat_setpoint_high: number;
+  heat_setpoint_low: number;
+  hvac_modes: string[];
+  long_name: string;
+  min_setpoint_differential: number;
+  power_source: string;
+  provisioning_type: string;
+  sensor_readings: string[];
+  short_name: string;
+  transport: string[];
+  type: string;
+}
+
+export interface ThermostatSensors {
+  Humidity: number;
+  Temperature: Temperature;
+  ThermostatCoolSetpoint: Temperature;
+  ThermostatFanMode: string;
+  ThermostatHeatSetpoint: Temperature;
+  ThermostatMode: string;
+  ThermostatOperatingState: string;
+}
+
+export interface Temperature {
+  unit: string;
+  value: number;
+}
+
 interface QueuedRequest<T> {
   path: string;
   config: AxiosRequestConfig<T>;
@@ -53,24 +237,9 @@ export class DweloAPI {
 
   constructor(private readonly token: string, private readonly gatewayID: string) { }
 
-  public async devices(): Promise<Device[]> {
-    const response = await this.request<ListDevicesResponse>('/v3/device/', {
-      params: {
-        gatewayId: this.gatewayID,
-        limit: 5000,
-        offset: 0,
-      },
-    });
-    return response.data.results;
-  }
-
-  public async sensors(deviceId?: number): Promise<Sensor[]> {
-    const response = await this.request<ListSensorsResponse>(`/v3/sensor/gateway/${this.gatewayID}/`, {
-      params: {
-        deviceId,
-      },
-    });
-    return response.data.results;
+  public async getRefreshedStatus(): Promise<RefreshedStatus> {
+    const response = await this.request<RefreshedStatus>(`/mobile/v1/devices/${this.gatewayID}/`);
+    return response.data;
   }
 
   public async setSwitchState(on: boolean, id: number) {
@@ -97,14 +266,14 @@ export class DweloAPI {
   public async setThermostatMode(mode: string, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': mode },
+      data: { 'command': mode, 'applicationId': 'ios' },
     });
   }
 
   public async setThermostatTemperature(mode: string, temperature: number, id: number) {
     return this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
-      data: { 'command': mode, 'commandValue': temperature },
+      data: { 'command': mode, 'commandValue': temperature.toString(), 'applicationId': 'ios' },
     });
   }
 
@@ -114,12 +283,15 @@ export class DweloAPI {
       data: { 'command': locked ? 'lock' : 'unlock' }, // Use 'lock'/'unlock' directly
     });
 
-    const target = locked ? 'locked' : 'unlocked';
+    const target = locked ? 'True' : 'False';
     await poll({
-      requestFn: () => this.sensors(id),
-      stopCondition: s => s.find(s => s.sensorType === 'DoorLocked')?.value === target,
-      interval: 10000,
-      timeout: 60 * 1000,
+      requestFn: () => this.getRefreshedStatus(),
+      stopCondition: (status) => {
+        const device = status.LOCKS.find(d => d.device_id === id);
+        return device?.sensors.DoorLocked === target;
+      },
+      interval: 2000,
+      timeout: 20000,
     });
   }
 
@@ -155,8 +327,8 @@ export class DweloAPI {
           console.error('Dwelo API request failed:', error);
           reject(error);
         } finally {
-          // Delay for rate limiting (2 requests per second = 500ms delay)
-          await new Promise(r => setTimeout(r, 80));
+          // Delay for rate limiting (10 requests per second = 100ms delay)
+          await new Promise(r => setTimeout(r, 100));
         }
       }
     });

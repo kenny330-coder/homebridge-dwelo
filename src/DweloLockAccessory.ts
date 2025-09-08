@@ -5,11 +5,9 @@ import {
   PlatformAccessory,
   Service,
 } from 'homebridge';
-import { DweloAPI, Sensor } from './DweloAPI';
+import { DweloAPI, Lock } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
-
-
 
 export class DweloLockAccessory extends StatefulAccessory {
   private readonly lockService: Service;
@@ -34,37 +32,34 @@ export class DweloLockAccessory extends StatefulAccessory {
     this.log.info(`Dwelo Lock '${this.accessory.displayName}' created!`);
   }
 
-  async updateState(sensors: Sensor[]): Promise<void> {
-    const lockState = this.toLockState(sensors);
+  async updateState(device: Lock): Promise<void> {
+    const lockState = this.toLockState(device.sensors.DoorLocked);
     this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(lockState);
-    this.setBatteryLevel(sensors);
+    this.setBatteryLevel(device.sensors.BatteryLevel);
     this.log.debug(`Lock state updated to: ${lockState}`);
   }
 
   private async setTargetLockState(value: CharacteristicValue) {
     this.log.info(`Setting lock to: ${value}`);
-    await this.dweloAPI.setLockState(!!value, this.accessory.context.device.uid);
+    await this.dweloAPI.setLockState(!!value, this.accessory.context.device.device_id);
     this.log.info('Lock toggle completed');
-    setTimeout(() => this.refresh(), 5000);
+    setTimeout(() => this.refresh(), 2000);
   }
 
-  private toLockState(sensors: Sensor[]) {
-    const lockSensor = sensors.find(s => s.sensorType === 'lock');
-    if (!lockSensor) {
+  private toLockState(doorLocked: string) {
+    if (!doorLocked) {
       return this.api.hap.Characteristic.LockCurrentState.UNKNOWN;
     }
-    return lockSensor.value === 'locked'
+    return doorLocked.toLowerCase() === 'true'
       ? this.api.hap.Characteristic.LockCurrentState.SECURED
       : this.api.hap.Characteristic.LockCurrentState.UNSECURED;
   }
 
-  private setBatteryLevel(sensors: Sensor[]) {
-    const batterySensor = sensors.find(s => s.sensorType === 'battery');
-    if (!batterySensor) {
+  private setBatteryLevel(batteryLevel: number) {
+    if (batteryLevel === undefined) {
       return;
     }
 
-    const batteryLevel = parseInt(batterySensor.value, 10);
     const batteryStatus = batteryLevel > 20
       ? this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_NORMAL
       : this.api.hap.Characteristic.StatusLowBattery.BATTERY_LEVEL_LOW;
