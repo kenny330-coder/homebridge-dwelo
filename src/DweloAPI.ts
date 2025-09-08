@@ -1,6 +1,7 @@
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import axiosRetry from 'axios-retry';
 
+
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 interface ListResponse {
@@ -231,11 +232,30 @@ interface QueuedRequest<T> {
   reject: (reason?: any) => void;
 }
 
+
 export class DweloAPI {
   private commandQueue: QueuedRequest<any>[] = [];
   private processingPromise: Promise<void> = Promise.resolve();
 
   constructor(private readonly token: string, private readonly gatewayID: string) { }
+
+  public async setThermostatFanMode(fanMode: string, id: number) {
+    await this.request(`/v3/device/${id}/command/`, {
+      method: 'POST',
+      data: { command: 'FanMode', commandValue: fanMode, applicationId: 'ios' },
+    });
+
+    await poll({
+      requestFn: () => this.getRefreshedStatus(),
+      stopCondition: (status) => {
+        // @ts-ignore
+        const device = status.THERMOSTATS.find((d: any) => d.device_id === id);
+        return device?.sensors.ThermostatFanMode === fanMode;
+      },
+      interval: 4000,
+      timeout: 40000,
+    });
+  }
 
   public async getRefreshedStatus(): Promise<RefreshedStatus> {
     const response = await this.request<RefreshedStatus>(`/mobile/v1/devices/${this.gatewayID}/`);

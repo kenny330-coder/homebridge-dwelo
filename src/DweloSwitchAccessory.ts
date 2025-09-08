@@ -51,7 +51,17 @@ export class DweloSwitchAccessory extends StatefulAccessory {
 
   async updateState(device: LightAndSwitch): Promise<void> {
     const isOn = device.sensors.Switch === 'On';
+    // Status Feedback: update HomeKit with actual device state
     this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
+
+    // Optionally, add StatusActive characteristic for feedback
+    if (this.service.testCharacteristic && this.api.hap.Characteristic.StatusActive) {
+      if (!this.service.testCharacteristic(this.api.hap.Characteristic.StatusActive)) {
+        this.service.addCharacteristic(this.api.hap.Characteristic.StatusActive);
+      }
+      this.service.getCharacteristic(this.api.hap.Characteristic.StatusActive).updateValue(true);
+    }
+
     this.log.debug(`Switch state updated to: ${isOn ? 'ON' : 'OFF'}`);
   }
 }

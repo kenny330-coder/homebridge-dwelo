@@ -82,8 +82,17 @@ export class DweloDimmerAccessory extends StatefulAccessory {
     const isOn = device.sensors.Switch === 'On';
     const brightness = device.sensors.Percent || 0;
 
+    // Status Feedback: update HomeKit with actual device state
     this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(brightness);
+
+    // Optionally, add StatusActive characteristic for feedback
+    if (this.service.testCharacteristic && this.api.hap.Characteristic.StatusActive) {
+      if (!this.service.testCharacteristic(this.api.hap.Characteristic.StatusActive)) {
+        this.service.addCharacteristic(this.api.hap.Characteristic.StatusActive);
+      }
+      this.service.getCharacteristic(this.api.hap.Characteristic.StatusActive).updateValue(true);
+    }
 
     this.log.debug(`Dimmer state updated to: ${isOn ? 'ON' : 'OFF'}, Brightness: ${brightness}`);
   }

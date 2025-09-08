@@ -3,6 +3,8 @@ import {
   Logging,
   PlatformAccessory,
   Service,
+  CharacteristicGetHandler,
+  CharacteristicSetHandler,
 } from 'homebridge';
 import { DweloAPI, Thermostat } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
@@ -13,6 +15,9 @@ import { poll } from './util';
 
 export class DweloThermostatAccessory extends StatefulAccessory {
   private readonly service: Service;
+  private fanService: Service;
+  private humidityService: Service;
+  private fanModes: string[];
 
   constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(platform, log, api, dweloAPI, accessory);
@@ -86,6 +91,57 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       .onGet(() => this.api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS)
       .onSet(() => {});
 
+
+    // Dynamically set supported TargetHeatingCoolingState values from hvac_modes
+    const hvacModes = accessory.context.device?.device_metadata?.hvac_modes || ['Off', 'Heat', 'Cool', 'Auto'];
+    const supportedModes = hvacModes.map((mode: string) => {
+      switch (mode.toLowerCase()) {
+        case 'off': return this.api.hap.Characteristic.TargetHeatingCoolingState.OFF;
+        case 'heat': return this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT;
+        case 'cool': return this.api.hap.Characteristic.TargetHeatingCoolingState.COOL;
+        case 'auto': return this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO;
+        default: return null;
+      }
+    }).filter((m: number|null) => m !== null);
+    this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState)
+      .setProps({ validValues: supportedModes });
+
+    // Add Fan Mode as a HomeKit Fan service, using supported fan_modes
+    this.fanModes = accessory.context.device?.device_metadata?.fan_modes || ['AutoLow', 'ManualLow'];
+    this.fanService = this.accessory.getService(this.api.hap.Service.Fan) || this.accessory.addService(this.api.hap.Service.Fan, 'Thermostat Fan');
+    this.fanService.getCharacteristic(this.api.hap.Characteristic.On)
+      .onGet(async () => {
+        await this.refresh();
+        const device = this.accessory.context.device;
+        const mode = device?.sensors?.ThermostatFanMode || this.fanModes[0];
+        // Consider 'ManualLow' as ON, 'AutoLow' as OFF
+        return mode === 'ManualLow';
+      })
+      .onSet(async (value) => {
+        const isOn = value as boolean;
+        // Use the first supported mode for OFF, second for ON if available
+        const fanMode = isOn ? (this.fanModes[1] || 'ManualLow') : (this.fanModes[0] || 'AutoLow');
+        try {
+          await this.dweloAPI.setThermostatFanMode(fanMode, this.accessory.context.device.device_id);
+          this.log.debug(`Thermostat fan mode set to: ${fanMode}`);
+        } catch (error) {
+          this.log.error('Error setting fan mode:', error);
+        }
+      });
+
+    // Add Humidity Sensor
+    this.humidityService = this.accessory.getService(this.api.hap.Service.HumiditySensor) || this.accessory.addService(this.api.hap.Service.HumiditySensor);
+
+    // TemperatureDisplayUnits: respect device unit
+    this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)
+      .onGet(async () => {
+        await this.refresh();
+        const device = this.accessory.context.device;
+        const unit = device?.sensors?.Temperature?.unit || 'F';
+        return unit === 'C' ? this.api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS : this.api.hap.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+      })
+      .onSet(() => {});
+
     this.log.info(`Dwelo Thermostat '${this.accessory.displayName}' created!`);
   }
 
@@ -96,40 +152,68 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       ThermostatOperatingState,
       ThermostatCoolSetpoint,
       ThermostatHeatSetpoint,
+      ThermostatFanMode,
+      Humidity,
     } = device.sensors;
 
     // Current State
     let currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.OFF;
-    if (ThermostatOperatingState.toLowerCase() === 'heat') {
+    if (ThermostatOperatingState && ThermostatOperatingState.toLowerCase() === 'heat') {
       currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.HEAT;
-    } else if (ThermostatOperatingState.toLowerCase() === 'cool') {
+    } else if (ThermostatOperatingState && ThermostatOperatingState.toLowerCase() === 'cool') {
       currentState = this.api.hap.Characteristic.CurrentHeatingCoolingState.COOL;
     }
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).updateValue(currentState);
 
     // Target State
     let targetState = this.api.hap.Characteristic.TargetHeatingCoolingState.OFF;
-    if (ThermostatMode.toLowerCase() === 'heat') {
+    if (ThermostatMode && ThermostatMode.toLowerCase() === 'heat') {
       targetState = this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT;
-    } else if (ThermostatMode.toLowerCase() === 'cool') {
+    } else if (ThermostatMode && ThermostatMode.toLowerCase() === 'cool') {
       targetState = this.api.hap.Characteristic.TargetHeatingCoolingState.COOL;
-    } else if (ThermostatMode.toLowerCase() === 'auto') {
-        targetState = this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO;
+    } else if (ThermostatMode && ThermostatMode.toLowerCase() === 'auto') {
+      targetState = this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO;
     }
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(targetState);
 
     // Current Temperature
-    const currentTemperatureC = this.fahrenheitToCelsius(Temperature.value);
-    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperatureC);
+    let currentTemperature = Temperature.value;
+    if (Temperature.unit === 'F') {
+      currentTemperature = this.fahrenheitToCelsius(Temperature.value);
+    }
+    this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).updateValue(currentTemperature);
 
     // Target Temperature
     if (targetState === this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT) {
-        const targetTemperatureC = this.fahrenheitToCelsius(ThermostatHeatSetpoint.value);
-        this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
+      let targetTemperature = ThermostatHeatSetpoint.value;
+      if (ThermostatHeatSetpoint.unit === 'F') {
+        targetTemperature = this.fahrenheitToCelsius(ThermostatHeatSetpoint.value);
+      }
+      this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperature);
     } else if (targetState === this.api.hap.Characteristic.TargetHeatingCoolingState.COOL) {
-        const targetTemperatureC = this.fahrenheitToCelsius(ThermostatCoolSetpoint.value);
-        this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperatureC);
+      let targetTemperature = ThermostatCoolSetpoint.value;
+      if (ThermostatCoolSetpoint.unit === 'F') {
+        targetTemperature = this.fahrenheitToCelsius(ThermostatCoolSetpoint.value);
+      }
+      this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperature);
     }
+
+
+    // Fan Mode
+    if (this.fanService) {
+      // Use the second supported mode as ON, first as OFF
+      this.fanService.getCharacteristic(this.api.hap.Characteristic.On).updateValue(
+        ThermostatFanMode === (this.fanModes[1] || 'ManualLow')
+      );
+    }
+
+    // Humidity
+    if (this.humidityService) {
+      this.humidityService.getCharacteristic(this.api.hap.Characteristic.CurrentRelativeHumidity).updateValue(Humidity);
+    }
+
+    // Save device context for .onGet/.onSet
+    this.accessory.context.device = device;
 
     this.log.debug(`Thermostat state updated for ${this.accessory.displayName}`);
   }
