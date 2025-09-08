@@ -41,9 +41,23 @@ export class DweloLockAccessory extends StatefulAccessory {
 
   private async setTargetLockState(value: CharacteristicValue) {
     this.log.info(`Setting lock to: ${value}`);
-    await this.dweloAPI.setLockState(!!value, this.accessory.context.device.device_id);
-    this.log.info('Lock toggle completed');
-    setTimeout(() => this.refresh(), 2000);
+    const targetState = value as number;
+    const previousCurrentState = this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).value;
+    const previousTargetState = this.lockService.getCharacteristic(this.api.hap.Characteristic.LockTargetState).value;
+
+    // Optimistically update the current state and target state
+    this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(targetState);
+    this.lockService.getCharacteristic(this.api.hap.Characteristic.LockTargetState).updateValue(targetState);
+
+    try {
+      await this.dweloAPI.setLockState(targetState === this.api.hap.Characteristic.LockTargetState.SECURED, this.accessory.context.device.device_id);
+      this.log.info('Lock toggle completed');
+    } catch (error) {
+      this.log.error('Error setting lock state:', error);
+      // Revert on error
+      this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(previousCurrentState);
+      this.lockService.getCharacteristic(this.api.hap.Characteristic.LockTargetState).updateValue(previousTargetState);
+    }
   }
 
   private toLockState(doorLocked: string) {

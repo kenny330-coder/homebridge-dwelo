@@ -8,46 +8,7 @@ import { DweloAPI, LightAndSwitch } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
-// Poll function copied from DweloAPI.ts
-function poll<T>({ requestFn, stopCondition, interval, timeout }: {
-  requestFn: () => Promise<T>;
-  stopCondition: (response: T) => boolean;
-  interval: number;
-  timeout: number;
-}): Promise<T> {
-  let stop = false;
-  let attempt = 1;
-
-  const executePoll = async (resolve: (r: T) => unknown, reject: (e: Error) => void) => {
-    const result = await requestFn();
-
-    let stopConditionalResult: boolean;
-    try {
-      stopConditionalResult = stopCondition(result);
-    } catch (e) {
-      reject(e as Error);
-      return;
-    }
-
-    if (stopConditionalResult) {
-      resolve(result);
-    } else if (stop) {
-      reject(new Error('timeout'));
-    } else {
-      setTimeout(executePoll, interval * Math.pow(2, attempt++), resolve, reject);
-    }
-  };
-
-  const pollResult = new Promise<T>(executePoll);
-  const maxTimeout = new Promise<T>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error('Exceeded max timeout'));
-      stop = true;
-    }, timeout);
-  });
-
-  return Promise.race([pollResult, maxTimeout]);
-}
+import { poll } from './util';
 
 
 export class DweloDimmerAccessory extends StatefulAccessory {
@@ -65,42 +26,25 @@ export class DweloDimmerAccessory extends StatefulAccessory {
       })
       .onSet(async (value) => {
         const isOn = value as boolean;
+        const previousOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
+        this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
+
         try {
           if (isOn) { // Turning On
             let lastBrightness = this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value as number;
             if (lastBrightness === 0) {
               lastBrightness = 100; // Default to 100 if last brightness was 0
             }
-            await this.dweloAPI.setDimmerBrightness(lastBrightness, this.accessory.context.device.device_id);
-            await poll({
-              requestFn: () => this.platform.getRefreshedStatusData(),
-              stopCondition: (status) => {
-                const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === this.accessory.context.device.device_id);
-                return device?.sensors.Switch === 'On' && device?.sensors.Percent === lastBrightness;
-              },
-              interval: 2000,
-              timeout: 20000,
-            });
-            this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
             this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(lastBrightness);
+            await this.dweloAPI.setDimmerBrightness(lastBrightness, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer state was set to: ON with brightness ${lastBrightness}`);
           } else { // Turning Off
             await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
-            await poll({
-                requestFn: () => this.platform.getRefreshedStatusData(),
-                stopCondition: (status) => {
-                  const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === this.accessory.context.device.device_id);
-                  return device?.sensors.Switch === 'Off';
-                },
-                interval: 2000,
-                timeout: 20000,
-              });
-            this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(false);
             this.log.debug('Dimmer state was set to: OFF');
           }
-        } catch (error) {
+          } catch (error) {
           this.log.error('Error setting dimmer state:', error);
-          this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(!isOn);
+          this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
         }
       });
 
@@ -111,40 +55,23 @@ export class DweloDimmerAccessory extends StatefulAccessory {
       })
       .onSet(async (value) => {
         const brightness = value as number;
+        const previousBrightness = this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value as number;
+        this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(brightness);
+
         try {
           if (brightness === 0) {
-            await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
-            await poll({
-                requestFn: () => this.platform.getRefreshedStatusData(),
-                stopCondition: (status) => {
-                  const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === this.accessory.context.device.device_id);
-                  return device?.sensors.Switch === 'Off';
-                },
-                interval: 2000,
-                timeout: 20000,
-            });
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(false);
-            this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(0);
+            await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer set to OFF (brightness 0)`);
           } else {
-            await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.device_id);
-            await poll({
-                requestFn: () => this.platform.getRefreshedStatusData(),
-                stopCondition: (status) => {
-                  const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === this.accessory.context.device.device_id);
-                  return device?.sensors.Switch === 'On' && device?.sensors.Percent === brightness;
-                },
-                interval: 2000,
-                timeout: 20000,
-            });
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
-            this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(brightness);
+            await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer brightness was set to: ${brightness}`);
           }
-        } catch (error) {
+          } catch (error) {
           this.log.error('Error setting dimmer brightness:', error);
           // Revert on error
-          this.refresh();
+          this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(previousBrightness);
         }
       });
 

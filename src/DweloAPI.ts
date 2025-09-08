@@ -242,38 +242,87 @@ export class DweloAPI {
     return response.data;
   }
 
-  public async setSwitchState(on: boolean, id: number) {
-    return this.request(`/v3/device/${id}/command/`, {
+  public async setSwitchState(on: boolean, id: number): Promise<AxiosResponse<any>> {
+    return await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
       data: { 'command': on ? 'on' : 'off' },
     });
   }
 
   public async setDimmerState(on: boolean, id: number) {
-    return this.request(`/v3/device/${id}/command/`, {
+    await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
       data: { 'command': on ? 'on' : 'off' },
+    });
+
+    const target = on ? 'On' : 'Off';
+    await poll({
+      requestFn: () => this.getRefreshedStatus(),
+      stopCondition: (status) => {
+        const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
+        return device?.sensors.Switch === target;
+      },
+      interval: 4000,
+      timeout: 40000,
     });
   }
 
   public async setDimmerBrightness(brightness: number, id: number) {
-    return this.request(`/v3/device/${id}/command/`, {
+    await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
       data: { 'command': 'Multilevel On', 'commandValue': brightness.toString(), 'applicationId': 'ios' },
+    });
+
+    const target = brightness;
+    await poll({
+      requestFn: () => this.getRefreshedStatus(),
+      stopCondition: (status) => {
+        const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
+        return device?.sensors.Percent === target;
+      },
+      interval: 4000,
+      timeout: 40000,
     });
   }
 
   public async setThermostatMode(mode: string, id: number) {
-    return this.request(`/v3/device/${id}/command/`, {
+    await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
       data: { 'command': mode, 'applicationId': 'ios' },
+    });
+
+    const target = mode;
+    await poll({
+      requestFn: () => this.getRefreshedStatus(),
+      stopCondition: (status) => {
+        const device = status.THERMOSTATS.find(d => d.device_id === id);
+        return device?.sensors.ThermostatMode === target;
+      },
+      interval: 4000,
+      timeout: 40000,
     });
   }
 
   public async setThermostatTemperature(mode: string, temperature: number, id: number) {
-    return this.request(`/v3/device/${id}/command/`, {
+    await this.request(`/v3/device/${id}/command/`, {
       method: 'POST',
       data: { 'command': mode, 'commandValue': temperature.toString(), 'applicationId': 'ios' },
+    });
+
+    const target = temperature;
+    await poll({
+      requestFn: () => this.getRefreshedStatus(),
+      stopCondition: (status) => {
+        const device = status.THERMOSTATS.find(d => d.device_id === id);
+        if (mode === 'setpoint_heat') {
+          return device?.sensors.ThermostatHeatSetpoint.value === target;
+        } else if (mode === 'setpoint_cool') {
+          return device?.sensors.ThermostatCoolSetpoint.value === target;
+        }
+        return false;
+      },
+      interval: 4000,
+      timeout: 40000,
     });
   }
 
@@ -290,8 +339,8 @@ export class DweloAPI {
         const device = status.LOCKS.find(d => d.device_id === id);
         return device?.sensors.DoorLocked === target;
       },
-      interval: 2000,
-      timeout: 20000,
+      interval: 4000,
+      timeout: 40000,
     });
   }
 
@@ -322,7 +371,12 @@ export class DweloAPI {
             },
           });
           console.log('Dwelo API Response:', response.data);
-          resolve(response);
+          // For POST requests, check if the status is 202 (Accepted)
+          if (config.method === 'POST' && response.status !== 202) {
+            reject(new Error(`API command not accepted. Status: ${response.status}`));
+          } else {
+            resolve(response);
+          }
         } catch (error) {
           console.error('Dwelo API request failed:', error);
           reject(error);
@@ -335,42 +389,4 @@ export class DweloAPI {
   }
 }
 
-function poll<T>({ requestFn, stopCondition, interval, timeout }: {
-  requestFn: () => Promise<T>;
-  stopCondition: (response: T) => boolean;
-  interval: number;
-  timeout: number;
-}): Promise<T> {
-  let stop = false;
-  let attempt = 1;
-
-  const executePoll = async (resolve: (r: T) => unknown, reject: (e: Error) => void) => {
-    const result = await requestFn();
-
-    let stopConditionalResult: boolean;
-    try {
-      stopConditionalResult = stopCondition(result);
-    } catch (e) {
-      reject(e as Error);
-      return;
-    }
-
-    if (stopConditionalResult) {
-      resolve(result);
-    } else if (stop) {
-      reject(new Error('timeout'));
-    } else {
-      setTimeout(executePoll, interval * Math.pow(2, attempt++), resolve, reject);
-    }
-  };
-
-  const pollResult = new Promise<T>(executePoll);
-  const maxTimeout = new Promise<T>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error('Exceeded max timeout'));
-      stop = true;
-    }, timeout);
-  });
-
-  return Promise.race([pollResult, maxTimeout]);
-}
+import { poll } from './util';

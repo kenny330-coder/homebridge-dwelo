@@ -8,46 +8,7 @@ import { DweloAPI, Thermostat } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
-// Poll function copied from DweloAPI.ts
-function poll<T>({ requestFn, stopCondition, interval, timeout }: {
-  requestFn: () => Promise<T>;
-  stopCondition: (response: T) => boolean;
-  interval: number;
-  timeout: number;
-}): Promise<T> {
-  let stop = false;
-  let attempt = 1;
-
-  const executePoll = async (resolve: (r: T) => unknown, reject: (e: Error) => void) => {
-    const result = await requestFn();
-
-    let stopConditionalResult: boolean;
-    try {
-      stopConditionalResult = stopCondition(result);
-    } catch (e) {
-      reject(e as Error);
-      return;
-    }
-
-    if (stopConditionalResult) {
-      resolve(result);
-    } else if (stop) {
-      reject(new Error('timeout'));
-    } else {
-      setTimeout(executePoll, interval * Math.pow(2, attempt++), resolve, reject);
-    }
-  };
-
-  const pollResult = new Promise<T>(executePoll);
-  const maxTimeout = new Promise<T>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error('Exceeded max timeout'));
-      stop = true;
-    }, timeout);
-  });
-
-  return Promise.race([pollResult, maxTimeout]);
-}
+import { poll } from './util';
 
 
 export class DweloThermostatAccessory extends StatefulAccessory {
@@ -71,20 +32,14 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       })
       .onSet(async (value) => {
         const mode = this.modeToString(value as number);
+        const previousState = this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
+        this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(value);
         try {
           await this.dweloAPI.setThermostatMode(mode, this.accessory.context.device.device_id);
-          await poll({
-            requestFn: () => this.platform.getRefreshedStatusData(),
-            stopCondition: (status) => {
-              const device = status.THERMOSTATS.find(d => d.device_id === this.accessory.context.device.device_id);
-              return device?.sensors.ThermostatMode.toLowerCase() === mode.toLowerCase();
-            },
-            interval: 2000,
-            timeout: 20000,
-          });
           this.log.debug(`Thermostat mode was set to: ${mode}`);
         } catch (error) {
           this.log.error('Error setting thermostat mode:', error);
+          this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).updateValue(previousState);
         }
       });
 
@@ -115,25 +70,15 @@ export class DweloThermostatAccessory extends StatefulAccessory {
             return;
         }
 
+        const previousTemperature = this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).value;
+        this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(value);
+
         try {
           await this.dweloAPI.setThermostatTemperature(mode, targetTemperatureF, this.accessory.context.device.device_id);
-          await poll({
-            requestFn: () => this.platform.getRefreshedStatusData(),
-            stopCondition: (status) => {
-              const device = status.THERMOSTATS.find(d => d.device_id === this.accessory.context.device.device_id);
-              if (!device) return false;
-              if (mode === 'heat') {
-                return device.sensors.ThermostatHeatSetpoint.value === targetTemperatureF;
-              } else { // cool
-                return device.sensors.ThermostatCoolSetpoint.value === targetTemperatureF;
-              }
-            },
-            interval: 2000,
-            timeout: 20000,
-          });
           this.log.debug(`Thermostat temperature was set to: ${targetTemperatureF}F for mode ${mode}`);
         } catch (error) {
           this.log.error('Error setting thermostat temperature:', error);
+          this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(previousTemperature);
         }
       });
 
