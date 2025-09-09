@@ -10,9 +10,6 @@ import { DweloAPI, Thermostat } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
-import { poll } from './util';
-
-
 export class DweloThermostatAccessory extends StatefulAccessory {
   private readonly service: Service;
   private fanService: Service;
@@ -64,15 +61,26 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
         
         const currentTargetMode = this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
+        const currentTemperature = this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).value as number;
         let mode: string;
 
         if (currentTargetMode === this.api.hap.Characteristic.TargetHeatingCoolingState.HEAT) {
           mode = 'heat';
         } else if (currentTargetMode === this.api.hap.Characteristic.TargetHeatingCoolingState.COOL) {
           mode = 'cool';
+        } else if (currentTargetMode === this.api.hap.Characteristic.TargetHeatingCoolingState.AUTO) {
+          // In Auto mode, decide whether to adjust the heat or cool setpoint
+          if (targetTemperatureC > currentTemperature) {
+            mode = 'cool'; // User is raising temp, adjust the upper bound
+          } else {
+            mode = 'heat'; // User is lowering temp, adjust the lower bound
+          }
         } else {
             this.log.warn(`Cannot set target temperature in current mode: ${currentTargetMode}`);
             return;
+          // In OFF mode, do nothing
+          this.log.warn(`Cannot set target temperature when thermostat is OFF. Current mode: ${currentTargetMode}`);
+          return;
         }
 
         const previousTemperature = this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).value;
@@ -84,6 +92,44 @@ export class DweloThermostatAccessory extends StatefulAccessory {
         } catch (error) {
           this.log.error('Error setting thermostat temperature:', error);
           this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(previousTemperature);
+        }
+      });
+
+    this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature)
+      .onGet(async () => {
+        await this.refresh();
+        return this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).value;
+      })
+      .onSet(async (value) => {
+        const targetTemperatureC = value as number;
+        const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
+        const previousTemperature = this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).value;
+        this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).updateValue(value);
+        try {
+          await this.dweloAPI.setThermostatTemperature('heat', targetTemperatureF, this.accessory.context.device.device_id);
+          this.log.debug(`Thermostat heating threshold set to: ${targetTemperatureF}F`);
+        } catch (error) {
+          this.log.error('Error setting thermostat heating threshold:', error);
+          this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).updateValue(previousTemperature);
+        }
+      });
+
+    this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature)
+      .onGet(async () => {
+        await this.refresh();
+        return this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).value;
+      })
+      .onSet(async (value) => {
+        const targetTemperatureC = value as number;
+        const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
+        const previousTemperature = this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).value;
+        this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).updateValue(value);
+        try {
+          await this.dweloAPI.setThermostatTemperature('cool', targetTemperatureF, this.accessory.context.device.device_id);
+          this.log.debug(`Thermostat cooling threshold set to: ${targetTemperatureF}F`);
+        } catch (error) {
+          this.log.error('Error setting thermostat cooling threshold:', error);
+          this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).updateValue(previousTemperature);
         }
       });
 
@@ -106,6 +152,17 @@ export class DweloThermostatAccessory extends StatefulAccessory {
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState)
       .setProps({ validValues: supportedModes });
 
+    // Set temperature range from metadata
+    const { heat_setpoint_low, heat_setpoint_high, cool_setpoint_low, cool_setpoint_high } = accessory.context.device?.device_metadata || {};
+    const minHeatC = this.fahrenheitToCelsius(heat_setpoint_low || 40);
+    const maxHeatC = this.fahrenheitToCelsius(heat_setpoint_high || 89);
+    const minCoolC = this.fahrenheitToCelsius(cool_setpoint_low || 61);
+    const maxCoolC = this.fahrenheitToCelsius(cool_setpoint_high || 90);
+
+    this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).setProps({ minValue: minHeatC, maxValue: maxHeatC, minStep: 0.5 });
+    this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).setProps({ minValue: minCoolC, maxValue: maxCoolC, minStep: 0.5 });
+
+
     // Add Fan Mode as a HomeKit Fan service, using supported fan_modes
     this.fanModes = accessory.context.device?.device_metadata?.fan_modes || ['AutoLow', 'ManualLow'];
     this.fanService = this.accessory.getService(this.api.hap.Service.Fan) || this.accessory.addService(this.api.hap.Service.Fan, 'Thermostat Fan');
@@ -113,13 +170,13 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       .onGet(async () => {
         await this.refresh();
         const device = this.accessory.context.device;
-        const mode = device?.sensors?.ThermostatFanMode || this.fanModes[0];
-        // Consider 'ManualLow' as ON, 'AutoLow' as OFF
-        return mode === 'ManualLow';
+        const mode = device?.sensors?.ThermostatFanMode;
+        // Based on examples: ON is 'ManualLow', OFF is 'AutoLow'
+        return mode === (this.fanModes[1] || 'ManualLow');
       })
       .onSet(async (value) => {
         const isOn = value as boolean;
-        // Use the first supported mode for OFF, second for ON if available
+        // Based on examples: ON is 'ManualLow' (second mode), OFF is 'AutoLow' (first mode)
         const fanMode = isOn ? (this.fanModes[1] || 'ManualLow') : (this.fanModes[0] || 'AutoLow');
         try {
           await this.dweloAPI.setThermostatFanMode(fanMode, this.accessory.context.device.device_id);
@@ -198,10 +255,23 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).updateValue(targetTemperature);
     }
 
+    // Heating and Cooling Thresholds for Auto mode
+    let heatThreshold = ThermostatHeatSetpoint.value;
+    if (ThermostatHeatSetpoint.unit === 'F') {
+      heatThreshold = this.fahrenheitToCelsius(ThermostatHeatSetpoint.value);
+    }
+    this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).updateValue(heatThreshold);
+
+    let coolThreshold = ThermostatCoolSetpoint.value;
+    if (ThermostatCoolSetpoint.unit === 'F') {
+      coolThreshold = this.fahrenheitToCelsius(ThermostatCoolSetpoint.value);
+    }
+    this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).updateValue(coolThreshold);
+
 
     // Fan Mode
     if (this.fanService) {
-      // Use the second supported mode as ON, first as OFF
+      // Based on examples: ON is 'ManualLow' (second mode), OFF is 'AutoLow' (first mode)
       this.fanService.getCharacteristic(this.api.hap.Characteristic.On).updateValue(
         ThermostatFanMode === (this.fanModes[1] || 'ManualLow')
       );

@@ -1,39 +1,49 @@
-export function poll<T>({ requestFn, stopCondition, interval, timeout }: {
+import { Logging } from 'homebridge';
+
+export function poll<T>({ requestFn, stopCondition, interval, timeout, log, logPrefix }: {
   requestFn: () => Promise<T>;
   stopCondition: (response: T) => boolean;
   interval: number;
   timeout: number;
+  log?: Logging;
+  logPrefix?: string;
 }): Promise<T> {
-  let stop = false;
-  let attempt = 1;
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+    let attempt = 0;
 
-  const executePoll = async (resolve: (r: T) => unknown, reject: (e: Error) => void) => {
-    const result = await requestFn();
-
-    let stopConditionalResult: boolean;
-    try {
-      stopConditionalResult = stopCondition(result);
-    } catch (e) {
-      reject(e as Error);
-      return;
-    }
-
-    if (stopConditionalResult) {
-      resolve(result);
-    } else if (stop) {
-      reject(new Error('timeout'));
-    } else {
-      setTimeout(executePoll, interval * Math.pow(2, attempt++), resolve, reject);
-    }
-  };
-
-  const pollResult = new Promise<T>(executePoll);
-  const maxTimeout = new Promise<T>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error('Exceeded max timeout'));
-      stop = true;
-    }, timeout);
+    const executePoll = async () => {
+      attempt++;
+      // Check for timeout before making the request
+      if (Date.now() - startTime > timeout) {
+        const message = `${logPrefix || 'Polling'} timed out after ${attempt - 1} attempts.`;
+        if (log) {
+          log.warn(message);
+        }
+        reject(new Error(message));
+        return;
+      }
+      try {
+        const result = await requestFn();
+        if (stopCondition(result)) {
+          // Condition met, we're done.
+          if (log) {
+            log.debug(`${logPrefix || 'Polling'} confirmed state after ${attempt} attempts.`);
+          }
+          resolve(result);
+        } else {
+          // Condition not met, poll again after the interval.
+          setTimeout(executePoll, interval);
+        }
+      } catch (error) {
+        // If the request itself fails, we should stop and reject.
+        if (log) {
+          log.error(`${logPrefix || 'Polling'} failed on attempt ${attempt}:`, error);
+        }
+        reject(error);
+      }
+    };
+    // Start the first poll.
+    executePoll();
   });
-
-  return Promise.race([pollResult, maxTimeout]);
 }

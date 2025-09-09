@@ -8,11 +8,10 @@ import { DweloAPI, LightAndSwitch } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
-import { poll } from './util';
-
 
 export class DweloDimmerAccessory extends StatefulAccessory {
   private readonly service: Service;
+  private lastKnownBrightness = 100;
 
   constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(platform, log, api, dweloAPI, accessory);
@@ -30,14 +29,11 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
 
         try {
-          if (isOn) { // Turning On
-            let lastBrightness = this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value as number;
-            if (lastBrightness === 0) {
-              lastBrightness = 100; // Default to 100 if last brightness was 0
-            }
-            this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(lastBrightness);
-            await this.dweloAPI.setDimmerBrightness(lastBrightness, this.accessory.context.device.device_id);
-            this.log.debug(`Dimmer state was set to: ON with brightness ${lastBrightness}`);
+          if (isOn) {
+            // When turning on, restore to the last known brightness level.
+            this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(this.lastKnownBrightness);
+            await this.dweloAPI.setDimmerBrightness(this.lastKnownBrightness, this.accessory.context.device.device_id);
+            this.log.debug(`Dimmer state was set to: ON with last known brightness ${this.lastKnownBrightness}`);
           } else { // Turning Off
             await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
             this.log.debug('Dimmer state was set to: OFF');
@@ -64,6 +60,8 @@ export class DweloDimmerAccessory extends StatefulAccessory {
             await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer set to OFF (brightness 0)`);
           } else {
+            // When brightness is set to a non-zero value, store it.
+            this.lastKnownBrightness = brightness;
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
             await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer brightness was set to: ${brightness}`);
@@ -81,6 +79,11 @@ export class DweloDimmerAccessory extends StatefulAccessory {
   async updateState(device: LightAndSwitch): Promise<void> {
     const isOn = device.sensors.Switch === 'On';
     const brightness = device.sensors.Percent || 0;
+
+    // Update last known brightness if the light is on and has a non-zero brightness value.
+    if (isOn && brightness > 0) {
+      this.lastKnownBrightness = brightness;
+    }
 
     // Status Feedback: update HomeKit with actual device state
     this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);

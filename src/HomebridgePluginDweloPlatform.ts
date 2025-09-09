@@ -17,6 +17,7 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
   public readonly accessoryHandlers: StatefulAccessory[] = [];
   private lastRefreshedStatusTime = 0;
   private refreshedStatus: RefreshedStatus | null = null;
+  private lastPingTime = 0;
   private refreshedStatusPromise: Promise<RefreshedStatus> | null = null;
 
   constructor(
@@ -24,14 +25,16 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
-    this.dweloAPI = new DweloAPI(config.token, config.gatewayId);
+    this.dweloAPI = new DweloAPI(config.token, config.gatewayId, this.log);
 
     this.log.info(`Dwelo Plugin Version: ${version}`);
     this.log.debug(`Finished initializing platform: ${this.config.name}`);
 
     this.api.on('didFinishLaunching', () => {
       this.discoverDevices();
-      setInterval(() => this.updateAllAccessories(), POLLING_INTERVAL);
+      setInterval(() => this.updateAllAccessories().catch(error => {
+        this.log.error('An error occurred during periodic accessory update:', error);
+      }), POLLING_INTERVAL);
     });
   }
 
@@ -64,6 +67,8 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
           this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
         }
       }
+    }).catch(error => {
+      this.log.error('Failed to discover devices during startup. Please check your configuration and network connection.', error);
     });
   }
 
@@ -100,6 +105,19 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
 
     this.log.debug('Refreshing status data');
     this.lastRefreshedStatusTime = now;
+
+    // Ping the hub to encourage it to report its latest status, but not more than
+    // once every 30 seconds to avoid abusing the connection.
+    if (now - this.lastPingTime > POLLING_INTERVAL) {
+      this.lastPingTime = now;
+      try {
+        this.log.debug('Pinging hub to encourage a status update.');
+        await this.dweloAPI.pingHub();
+      } catch (error) {
+        this.log.warn('Hub ping failed, proceeding with status refresh anyway.');
+      }
+    }
+
     this.refreshedStatusPromise = this.dweloAPI.getRefreshedStatus();
     this.refreshedStatus = await this.refreshedStatusPromise;
     this.refreshedStatusPromise = null;

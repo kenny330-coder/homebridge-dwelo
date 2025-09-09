@@ -1,2 +1,2 @@
-export const POLLING_INTERVAL_MS = 4000;
+export const POLLING_INTERVAL_MS = 2000;
 export const POLLING_TIMEOUT_MS = 40000;

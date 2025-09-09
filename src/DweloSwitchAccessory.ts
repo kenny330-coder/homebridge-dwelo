@@ -8,9 +8,6 @@ import { DweloAPI, LightAndSwitch } from './DweloAPI';
 import { StatefulAccessory } from './StatefulAccessory';
 import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 
-import { poll } from './util';
-
-
 export class DweloSwitchAccessory extends StatefulAccessory {
   private readonly service: Service;
 

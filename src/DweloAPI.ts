@@ -1,5 +1,7 @@
-import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import axios, { AxiosRequestConfig, AxiosResponse, isAxiosError } from 'axios';
 import axiosRetry from 'axios-retry';
+import { Logging } from 'homebridge';
+import { POLLING_INTERVAL_MS, POLLING_TIMEOUT_MS } from './constants';
 
 
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
@@ -237,23 +239,26 @@ export class DweloAPI {
   private commandQueue: QueuedRequest<any>[] = [];
   private processingPromise: Promise<void> = Promise.resolve();
 
-  constructor(private readonly token: string, private readonly gatewayID: string) { }
+  constructor(
+    private readonly token: string,
+    private readonly gatewayID: string,
+    private readonly log: Logging,
+  ) { }
+
+  public async pingHub(): Promise<void> {
+    await this.request(`/v4/hub/${this.gatewayID}/ping/`, {
+      method: 'POST',
+    });
+  }
 
   public async setThermostatFanMode(fanMode: string, id: number) {
-    await this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { command: 'FanMode', commandValue: fanMode, applicationId: 'ios' },
-    });
-
-    await poll({
-      requestFn: () => this.getRefreshedStatus(),
-      stopCondition: (status) => {
-        // @ts-ignore
-        const device = status.THERMOSTATS.find((d: any) => d.device_id === id);
+    await this.sendCommandAndPoll({
+      deviceId: id,
+      commandPayload: { command: 'FanMode', commandValue: fanMode, applicationId: 'ios' },
+      pollStopCondition: (status) => {
+        const device = status.THERMOSTATS.find(d => d.device_id === id);
         return device?.sensors.ThermostatFanMode === fanMode;
       },
-      interval: 4000,
-      timeout: 40000,
     });
   }
 
@@ -262,105 +267,91 @@ export class DweloAPI {
     return response.data;
   }
 
-  public async setSwitchState(on: boolean, id: number): Promise<AxiosResponse<any>> {
-    return await this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { 'command': on ? 'on' : 'off' },
+  public async setSwitchState(on: boolean, id: number): Promise<void> {
+    await this.sendCommandAndPoll({
+      deviceId: id,
+      commandPayload: { command: on ? 'on' : 'off' },
+      pollStopCondition: (status) => {
+        const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
+        return device?.sensors.Switch === (on ? 'On' : 'Off');
+      },
     });
   }
 
   public async setDimmerState(on: boolean, id: number) {
-    await this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { 'command': on ? 'on' : 'off' },
-    });
-
-    const target = on ? 'On' : 'Off';
-    await poll({
-      requestFn: () => this.getRefreshedStatus(),
-      stopCondition: (status) => {
+    await this.sendCommandAndPoll({
+      deviceId: id,
+      commandPayload: { command: on ? 'on' : 'off' },
+      pollStopCondition: (status) => {
         const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
-        return device?.sensors.Switch === target;
+        return device?.sensors.Switch === (on ? 'On' : 'Off');
       },
-      interval: 4000,
-      timeout: 40000,
     });
   }
 
   public async setDimmerBrightness(brightness: number, id: number) {
-    await this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { 'command': 'Multilevel On', 'commandValue': brightness.toString(), 'applicationId': 'ios' },
-    });
-
-    const target = brightness;
-    await poll({
-      requestFn: () => this.getRefreshedStatus(),
-      stopCondition: (status) => {
+    await this.sendCommandAndPoll({
+      deviceId: id,
+      commandPayload: { command: 'Multilevel On', commandValue: brightness.toString(), applicationId: 'ios' },
+      pollStopCondition: (status) => {
         const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
-        return device?.sensors.Percent === target;
+        return device?.sensors.Percent === brightness;
       },
-      interval: 4000,
-      timeout: 40000,
     });
   }
 
   public async setThermostatMode(mode: string, id: number) {
-    await this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { 'command': mode, 'applicationId': 'ios' },
-    });
-
-    const target = mode;
-    await poll({
-      requestFn: () => this.getRefreshedStatus(),
-      stopCondition: (status) => {
+    await this.sendCommandAndPoll({
+      deviceId: id,
+      commandPayload: { command: mode, applicationId: 'ios' },
+      pollStopCondition: (status) => {
         const device = status.THERMOSTATS.find(d => d.device_id === id);
-        return device?.sensors.ThermostatMode === target;
+        return device?.sensors.ThermostatMode.toLowerCase() === mode.toLowerCase();
       },
-      interval: 4000,
-      timeout: 40000,
     });
   }
 
   public async setThermostatTemperature(mode: string, temperature: number, id: number) {
-    await this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { 'command': mode, 'commandValue': temperature.toString(), 'applicationId': 'ios' },
-    });
-
-    const target = temperature;
-    await poll({
-      requestFn: () => this.getRefreshedStatus(),
-      stopCondition: (status) => {
+    await this.sendCommandAndPoll({
+      deviceId: id,
+      commandPayload: { command: mode, commandValue: temperature.toString(), applicationId: 'ios' },
+      pollStopCondition: (status) => {
         const device = status.THERMOSTATS.find(d => d.device_id === id);
-        if (mode === 'setpoint_heat') {
-          return device?.sensors.ThermostatHeatSetpoint.value === target;
-        } else if (mode === 'setpoint_cool') {
-          return device?.sensors.ThermostatCoolSetpoint.value === target;
+        if (mode === 'heat') {
+          return device?.sensors.ThermostatHeatSetpoint.value === temperature;
+        } else if (mode === 'cool') {
+          return device?.sensors.ThermostatCoolSetpoint.value === temperature;
         }
         return false;
       },
-      interval: 4000,
-      timeout: 40000,
     });
   }
 
   public async setLockState(locked: boolean, id: number) {
-    await this.request(`/v3/device/${id}/command/`, {
-      method: 'POST',
-      data: { 'command': locked ? 'lock' : 'unlock' }, // Use 'lock'/'unlock' directly
+    await this.sendCommandAndPoll({
+      deviceId: id,
+      commandPayload: { command: locked ? 'lock' : 'unlock' },
+      pollStopCondition: (status) => {
+        const device = status.LOCKS.find(d => d.device_id === id);
+        return device?.sensors.DoorLocked === (locked ? 'True' : 'False');
+      },
     });
+  }
 
-    const target = locked ? 'True' : 'False';
+  private async sendCommandAndPoll({ deviceId, commandPayload, pollStopCondition }: {
+    deviceId: number;
+    commandPayload: Record<string, string>;
+    pollStopCondition: (status: RefreshedStatus) => boolean;
+  }): Promise<void> {
+    const logPrefix = `[Device ${deviceId}]`;
+    await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: commandPayload });
     await poll({
       requestFn: () => this.getRefreshedStatus(),
-      stopCondition: (status) => {
-        const device = status.LOCKS.find(d => d.device_id === id);
-        return device?.sensors.DoorLocked === target;
-      },
-      interval: 4000,
-      timeout: 40000,
+      stopCondition: pollStopCondition,
+      interval: POLLING_INTERVAL_MS,
+      timeout: POLLING_TIMEOUT_MS,
+      log: this.log,
+      logPrefix: `${logPrefix} Polling for state change`,
     });
   }
 
@@ -379,7 +370,7 @@ export class DweloAPI {
       if (this.commandQueue.length > 0) {
         const { path, config, resolve, reject } = this.commandQueue.shift()!;
         try {
-          console.log(`Dwelo API Request: ${config.method ?? 'GET'} ${path}`, { params: config.params, data: config.data });
+          this.log.debug(`Dwelo API Request: ${config.method ?? 'GET'} ${path}`, { params: config.params, data: config.data });
           const response = await axios({
             url: 'https://api.dwelo.com' + path,
             method: config.method ?? 'GET',
@@ -387,18 +378,23 @@ export class DweloAPI {
             data: config.data,
             headers: {
               ...config.headers,
-              Authorization: `Token ${this.token} `,
+              Authorization: `Token ${this.token}`,
             },
           });
-          console.log('Dwelo API Response:', response.data);
-          // For POST requests, check if the status is 202 (Accepted)
-          if (config.method === 'POST' && response.status !== 202) {
-            reject(new Error(`API command not accepted. Status: ${response.status}`));
-          } else {
-            resolve(response);
-          }
+          this.log.debug('Dwelo API Response:', response.data);
+          resolve(response);
         } catch (error) {
-          console.error('Dwelo API request failed:', error);
+          if (isAxiosError(error)) {
+            this.log.error(`API request to ${path} failed with status ${error.response?.status}: ${error.message}`);
+            if (error.response?.data) {
+              const responseData = typeof error.response.data === 'string' && error.response.data.startsWith('<!DOCTYPE HTML')
+                ? `HTML response (length: ${error.response.data.length})`
+                : JSON.stringify(error.response.data);
+              this.log.error(`Response data: ${responseData}`);
+            }
+          } else {
+            this.log.error('An unexpected error occurred during API request:', error);
+          }
           reject(error);
         } finally {
           // Delay for rate limiting (10 requests per second = 100ms delay)
