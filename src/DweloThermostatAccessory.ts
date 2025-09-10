@@ -22,16 +22,10 @@ export class DweloThermostatAccessory extends StatefulAccessory {
     this.service = this.accessory.getService(this.api.hap.Service.Thermostat) || this.accessory.addService(this.api.hap.Service.Thermostat);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).value;
-      });
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.CurrentHeatingCoolingState).value);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
-      })
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value)
       .onSet(async (value) => {
         const mode = this.modeToString(value as number);
         const previousState = this.service.getCharacteristic(this.api.hap.Characteristic.TargetHeatingCoolingState).value;
@@ -46,16 +40,10 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).value;
-      });
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.CurrentTemperature).value);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).value;
-      })
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.TargetTemperature).value)
       .onSet(async (value) => {
         const targetTemperatureC = value as number;
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
@@ -76,10 +64,8 @@ export class DweloThermostatAccessory extends StatefulAccessory {
             mode = 'heat'; // User is lowering temp, adjust the lower bound
           }
         } else {
-            this.log.warn(`Cannot set target temperature in current mode: ${currentTargetMode}`);
-            return;
-          // In OFF mode, do nothing
-          this.log.warn(`Cannot set target temperature when thermostat is OFF. Current mode: ${currentTargetMode}`);
+          // In OFF mode or other modes, do nothing.
+          this.log.warn(`Cannot set target temperature when thermostat is not in HEAT, COOL, or AUTO mode. Current mode: ${currentTargetMode}`);
           return;
         }
 
@@ -96,10 +82,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).value;
-      })
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.HeatingThresholdTemperature).value)
       .onSet(async (value) => {
         const targetTemperatureC = value as number;
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
@@ -115,10 +98,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).value;
-      })
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).value)
       .onSet(async (value) => {
         const targetTemperatureC = value as number;
         const targetTemperatureF = this.celsiusToFahrenheit(targetTemperatureC);
@@ -132,11 +112,6 @@ export class DweloThermostatAccessory extends StatefulAccessory {
           this.service.getCharacteristic(this.api.hap.Characteristic.CoolingThresholdTemperature).updateValue(previousTemperature);
         }
       });
-
-    this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)
-      .onGet(() => this.api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS)
-      .onSet(() => {});
-
 
     // Dynamically set supported TargetHeatingCoolingState values from hvac_modes
     const hvacModes = accessory.context.device?.device_metadata?.hvac_modes || ['Off', 'Heat', 'Cool', 'Auto'];
@@ -167,13 +142,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
     this.fanModes = accessory.context.device?.device_metadata?.fan_modes || ['AutoLow', 'ManualLow'];
     this.fanService = this.accessory.getService(this.api.hap.Service.Fan) || this.accessory.addService(this.api.hap.Service.Fan, 'Thermostat Fan');
     this.fanService.getCharacteristic(this.api.hap.Characteristic.On)
-      .onGet(async () => {
-        await this.refresh();
-        const device = this.accessory.context.device;
-        const mode = device?.sensors?.ThermostatFanMode;
-        // Based on examples: ON is 'ManualLow', OFF is 'AutoLow'
-        return mode === (this.fanModes[1] || 'ManualLow');
-      })
+      .onGet(() => this.fanService.getCharacteristic(this.api.hap.Characteristic.On).value)
       .onSet(async (value) => {
         const isOn = value as boolean;
         // Based on examples: ON is 'ManualLow' (second mode), OFF is 'AutoLow' (first mode)
@@ -191,12 +160,7 @@ export class DweloThermostatAccessory extends StatefulAccessory {
 
     // TemperatureDisplayUnits: respect device unit
     this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits)
-      .onGet(async () => {
-        await this.refresh();
-        const device = this.accessory.context.device;
-        const unit = device?.sensors?.Temperature?.unit || 'F';
-        return unit === 'C' ? this.api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS : this.api.hap.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
-      })
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits).value)
       .onSet(() => {});
 
     this.log.info(`Dwelo Thermostat '${this.accessory.displayName}' created!`);
@@ -281,6 +245,11 @@ export class DweloThermostatAccessory extends StatefulAccessory {
     if (this.humidityService) {
       this.humidityService.getCharacteristic(this.api.hap.Characteristic.CurrentRelativeHumidity).updateValue(Humidity);
     }
+
+    // Temperature Display Unit
+    const unit = Temperature.unit || 'F';
+    const displayUnit = unit === 'C' ? this.api.hap.Characteristic.TemperatureDisplayUnits.CELSIUS : this.api.hap.Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+    this.service.getCharacteristic(this.api.hap.Characteristic.TemperatureDisplayUnits).updateValue(displayUnit);
 
     // Save device context for .onGet/.onSet
     this.accessory.context.device = device;

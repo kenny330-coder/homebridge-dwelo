@@ -19,10 +19,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
     this.service = this.accessory.getService(this.api.hap.Service.Lightbulb) || this.accessory.addService(this.api.hap.Service.Lightbulb);
 
     this.service.getCharacteristic(this.api.hap.Characteristic.On)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
-      })
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.On).value)
       .onSet(async (value) => {
         const isOn = value as boolean;
         const previousOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value;
@@ -45,10 +42,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness)
-      .onGet(async () => {
-        await this.refresh();
-        return this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value;
-      })
+      .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value)
       .onSet(async (value) => {
         const brightness = value as number;
         const previousBrightness = this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value as number;

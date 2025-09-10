@@ -379,12 +379,17 @@ export class DweloAPI {
             headers: {
               ...config.headers,
               Authorization: `Token ${this.token}`,
+              // The /mobile/ endpoint requires a mobile User-Agent, matching the successful curl command.
+              'User-Agent': 'Dwelo/2.3.4 (iPhone; iOS 14.4; Scale/2.00)',
             },
           });
           this.log.debug('Dwelo API Response:', response.data);
           resolve(response);
         } catch (error) {
           if (isAxiosError(error)) {
+            if (error.response?.status === 401) {
+              this.log.error('Authentication failed (401 Unauthorized). Please check that your Dwelo API token in the plugin configuration is correct and has not expired.');
+            }
             this.log.error(`API request to ${path} failed with status ${error.response?.status}: ${error.message}`);
             if (error.response?.data) {
               const responseData = typeof error.response.data === 'string' && error.response.data.startsWith('<!DOCTYPE HTML')
