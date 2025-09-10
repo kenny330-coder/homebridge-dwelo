@@ -332,14 +332,32 @@ export class DweloAPI {
     const logPrefix = `[Device ${deviceId}]`;
     const fullCommandPayload = { ...commandPayload, applicationId: 'ios' };
     await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
-    await poll({
-      requestFn: () => this.getRefreshedStatus(),
-      stopCondition: pollStopCondition,
-      interval: POLLING_INTERVAL_MS,
-      timeout: POLLING_TIMEOUT_MS,
-      log: this.log,
-      logPrefix: `${logPrefix} Polling for state change`,
-    });
+    try {
+      await poll({
+        requestFn: () => this.getRefreshedStatus(),
+        stopCondition: pollStopCondition,
+        interval: POLLING_INTERVAL_MS,
+        timeout: POLLING_TIMEOUT_MS,
+        log: this.log,
+        logPrefix: `${logPrefix} Polling for state change`,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('timed out')) {
+        this.log.warn(`${logPrefix} State confirmation poll timed out. This can happen if the command was dropped or the network is slow. Resending command once more as a fallback.`);
+        try {
+          // Re-send the command, but don't wait for confirmation this time.
+          await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
+          this.log.debug(`${logPrefix} Fallback command sent successfully. Assuming it will be processed.`);
+        } catch (retryError) {
+          this.log.error(`${logPrefix} The fallback command also failed. The device state is likely unchanged.`, retryError);
+          throw error; // Re-throw the original timeout error to trigger a UI revert.
+        }
+      } else {
+        // For other errors during polling (e.g., API unreachable), re-throw.
+        this.log.error(`${logPrefix} Polling failed with an unexpected error:`, error);
+        throw error;
+      }
+    }
   }
 
   private async request<T>(

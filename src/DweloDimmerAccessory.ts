@@ -34,6 +34,13 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           this.onCommandTimeout = null;
         }
 
+        if (isOn && previousOn) {
+          // This is a redundant "On" command for a light that's already on.
+          // This can happen when adjusting brightness. We just log it and do nothing else.
+          this.log.debug('Received redundant "On" command while light is already on. Ignoring.');
+          this.onCommandTimeout = null;
+        }
+
         if (isOn) {
           // This is an "On" command. It might be followed by a brightness command from HomeKit.
           // We set a short timeout. If a brightness command arrives, it will cancel this.
