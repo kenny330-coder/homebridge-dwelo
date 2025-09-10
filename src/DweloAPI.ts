@@ -239,7 +239,7 @@ export class DweloAPI {
   public async setThermostatFanMode(fanMode: string, id: number) {
     await this.sendCommandAndPoll({
       deviceId: id,
-      commandPayload: { command: 'FanMode', commandValue: fanMode, applicationId: 'ios' },
+      commandPayload: { command: 'FanMode', commandValue: fanMode },
       pollStopCondition: (status) => {
         const device = status.THERMOSTATS.find(d => d.device_id === id);
         return device?.sensors.ThermostatFanMode === fanMode;
@@ -277,7 +277,7 @@ export class DweloAPI {
   public async setDimmerBrightness(brightness: number, id: number) {
     await this.sendCommandAndPoll({
       deviceId: id,
-      commandPayload: { command: 'Multilevel On', commandValue: brightness.toString(), applicationId: 'ios' },
+      commandPayload: { command: 'Multilevel On', commandValue: brightness.toString() },
       pollStopCondition: (status) => {
         const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
         return device?.sensors.Percent === brightness;
@@ -288,7 +288,7 @@ export class DweloAPI {
   public async setThermostatMode(mode: string, id: number) {
     await this.sendCommandAndPoll({
       deviceId: id,
-      commandPayload: { command: mode, applicationId: 'ios' },
+      commandPayload: { command: mode },
       pollStopCondition: (status) => {
         const device = status.THERMOSTATS.find(d => d.device_id === id);
         return device?.sensors.ThermostatMode.toLowerCase() === mode.toLowerCase();
@@ -299,7 +299,7 @@ export class DweloAPI {
   public async setThermostatTemperature(mode: string, temperature: number, id: number) {
     await this.sendCommandAndPoll({
       deviceId: id,
-      commandPayload: { command: mode, commandValue: temperature.toString(), applicationId: 'ios' },
+      commandPayload: { command: mode, commandValue: temperature.toString() },
       pollStopCondition: (status) => {
         const device = status.THERMOSTATS.find(d => d.device_id === id);
         if (mode === 'heat') {
@@ -329,7 +329,8 @@ export class DweloAPI {
     pollStopCondition: (status: RefreshedStatus) => boolean;
   }): Promise<void> {
     const logPrefix = `[Device ${deviceId}]`;
-    await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: commandPayload });
+    const fullCommandPayload = { ...commandPayload, applicationId: 'ios' };
+    await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
     await poll({
       requestFn: () => this.getRefreshedStatus(),
       stopCondition: pollStopCondition,
@@ -352,7 +353,11 @@ export class DweloAPI {
         headers: {
           ...config.headers,
           'Authorization': `Token ${this.token}`,
-          'User-Agent': 'Dwelo/2.3.4 (iPhone; iOS 14.4; Scale/2.00)',
+          // This specific User-Agent seems to be required by the mobile API endpoint.
+          'User-Agent': 'Dwelo/3 CFNetwork/3860.100.1 Darwin/25.0.0',
+          // This custom protocol version header also appears to be required.
+          'X-Dwelo-Protocol-Version': '1.1',
+          'Accept': 'application/json',
         },
       });
       this.log.debug('Dwelo API Response:', response.data);
