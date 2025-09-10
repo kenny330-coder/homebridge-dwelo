@@ -230,6 +230,8 @@ export class DweloAPI {
     private readonly log: Logging,
   ) { }
 
+  private pollingControllers = new Map<number, AbortController>();
+
   public async pingHub(): Promise<void> {
     await this.request(`/v4/hub/${this.gatewayID}/ping/`, {
       method: 'POST',
@@ -329,6 +331,16 @@ export class DweloAPI {
     commandPayload: Record<string, string>;
     pollStopCondition: (status: RefreshedStatus) => boolean;
   }): Promise<void> {
+    // Cancel any existing polling for this device.
+    if (this.pollingControllers.has(deviceId)) {
+      this.log.debug(`[Device ${deviceId}] New command received, cancelling previous polling operation.`);
+      this.pollingControllers.get(deviceId)?.abort();
+    }
+
+    // Create a new AbortController for this operation.
+    const controller = new AbortController();
+    this.pollingControllers.set(deviceId, controller);
+
     const logPrefix = `[Device ${deviceId}]`;
     const fullCommandPayload = { ...commandPayload, applicationId: 'ios' };
     await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
@@ -340,11 +352,20 @@ export class DweloAPI {
         timeout: POLLING_TIMEOUT_MS,
         log: this.log,
         logPrefix: `${logPrefix} Polling for state change`,
+        signal: controller.signal,
       });
     } catch (error) {
-      if (error instanceof Error && error.message.includes('timed out')) {
+      if (error instanceof PollAbortedError) {
+        this.log.debug(`${logPrefix} Polling was aborted by a new command. No fallback action needed.`);
+        // Do not re-throw. The new command's flow will continue.
+        return;
+      } else if (error instanceof Error && error.message.includes('timed out')) {
         this.log.warn(`${logPrefix} State confirmation poll timed out. This can happen if the command was dropped or the network is slow. Resending command once more as a fallback.`);
         try {
+          if (controller.signal.aborted) {
+            this.log.debug(`${logPrefix} Command was cancelled while handling timeout. No fallback action needed.`);
+            return;
+          }
           // Re-send the command, but don't wait for confirmation this time.
           await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
           this.log.debug(`${logPrefix} Fallback command sent successfully. Assuming it will be processed.`);
@@ -356,6 +377,11 @@ export class DweloAPI {
         // For other errors during polling (e.g., API unreachable), re-throw.
         this.log.error(`${logPrefix} Polling failed with an unexpected error:`, error);
         throw error;
+      }
+    } finally {
+      // Clean up the controller, but only if a newer one hasn't already replaced it.
+      if (this.pollingControllers.get(deviceId) === controller) {
+        this.pollingControllers.delete(deviceId);
       }
     }
   }
@@ -403,4 +429,4 @@ export class DweloAPI {
   }
 }
 
-import { poll } from './util';
+import { poll, PollAbortedError } from './util';
