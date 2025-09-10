@@ -81,7 +81,5 @@ export class DweloLockAccessory extends StatefulAccessory {
 
     this.batteryService.getCharacteristic(this.api.hap.Characteristic.BatteryLevel).updateValue(batteryLevel);
     this.batteryService.getCharacteristic(this.api.hap.Characteristic.StatusLowBattery).updateValue(batteryStatus);
-
-    this.log.info('Lock battery: ', batteryLevel);
   }
 }
