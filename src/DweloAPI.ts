@@ -233,6 +233,7 @@ export class DweloAPI {
   public async pingHub(): Promise<void> {
     await this.request(`/v4/hub/${this.gatewayID}/ping/`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, // Match packet capture for empty POST
     });
   }
 
@@ -358,6 +359,7 @@ export class DweloAPI {
           // This custom protocol version header also appears to be required.
           'X-Dwelo-Protocol-Version': '1.1',
           'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9',
         },
       });
       this.log.debug('Dwelo API Response:', response.data);
