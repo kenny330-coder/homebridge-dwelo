@@ -1,10 +1,6 @@
 import axios, { AxiosRequestConfig, AxiosResponse, isAxiosError } from 'axios';
-import axiosRetry from 'axios-retry';
 import { Logging } from 'homebridge';
 import { POLLING_INTERVAL_MS, POLLING_TIMEOUT_MS } from './constants';
-
-
-axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 interface ListResponse {
   resultsCount: number;
@@ -227,18 +223,7 @@ export interface Temperature {
   value: number;
 }
 
-interface QueuedRequest<T> {
-  path: string;
-  config: AxiosRequestConfig<T>;
-  resolve: (value: AxiosResponse<T>) => void;
-  reject: (reason?: any) => void;
-}
-
-
 export class DweloAPI {
-  private commandQueue: QueuedRequest<any>[] = [];
-  private processingPromise: Promise<void> = Promise.resolve();
-
   constructor(
     private readonly token: string,
     private readonly gatewayID: string,
@@ -359,54 +344,37 @@ export class DweloAPI {
     path: string,
     config: AxiosRequestConfig<T> = {},
   ): Promise<AxiosResponse<T>> {
-    return new Promise<AxiosResponse<T>>((resolve, reject) => {
-      this.commandQueue.push({ path, config, resolve, reject });
-      this.processQueue();
-    });
-  }
-
-  private async processQueue(): Promise<void> {
-    this.processingPromise = this.processingPromise.then(async () => {
-      if (this.commandQueue.length > 0) {
-        const { path, config, resolve, reject } = this.commandQueue.shift()!;
-        try {
-          this.log.debug(`Dwelo API Request: ${config.method ?? 'GET'} ${path}`, { params: config.params, data: config.data });
-          const response = await axios({
-            url: 'https://api.dwelo.com' + path,
-            method: config.method ?? 'GET',
-            params: config.params,
-            data: config.data,
-            headers: {
-              ...config.headers,
-              Authorization: `Token ${this.token}`,
-              // The /mobile/ endpoint requires a mobile User-Agent, matching the successful curl command.
-              'User-Agent': 'Dwelo/2.3.4 (iPhone; iOS 14.4; Scale/2.00)',
-            },
-          });
-          this.log.debug('Dwelo API Response:', response.data);
-          resolve(response);
-        } catch (error) {
-          if (isAxiosError(error)) {
-            if (error.response?.status === 401) {
-              this.log.error('Authentication failed (401 Unauthorized). Please check that your Dwelo API token in the plugin configuration is correct and has not expired.');
-            }
-            this.log.error(`API request to ${path} failed with status ${error.response?.status}: ${error.message}`);
-            if (error.response?.data) {
-              const responseData = typeof error.response.data === 'string' && error.response.data.startsWith('<!DOCTYPE HTML')
-                ? `HTML response (length: ${error.response.data.length})`
-                : JSON.stringify(error.response.data);
-              this.log.error(`Response data: ${responseData}`);
-            }
-          } else {
-            this.log.error('An unexpected error occurred during API request:', error);
-          }
-          reject(error);
-        } finally {
-          // Delay for rate limiting (10 requests per second = 100ms delay)
-          await new Promise(r => setTimeout(r, 100));
+    try {
+      this.log.debug(`Dwelo API Request: ${config.method ?? 'GET'} ${path}`, { params: config.params, data: config.data });
+      const response = await axios({
+        url: 'https://api.dwelo.com' + path,
+        ...config,
+        headers: {
+          ...config.headers,
+          'Authorization': `Token ${this.token}`,
+          'User-Agent': 'Dwelo/2.3.4 (iPhone; iOS 14.4; Scale/2.00)',
+        },
+      });
+      this.log.debug('Dwelo API Response:', response.data);
+      return response;
+    } catch (error) {
+      if (isAxiosError(error)) {
+        if (error.response?.status === 401) {
+          this.log.error('Authentication failed (401 Unauthorized). Please check that your Dwelo API token in the plugin configuration is correct and has not expired.');
         }
+        this.log.error(`API request to ${path} failed with status ${error.response?.status}: ${error.message}`);
+        if (error.response?.data) {
+          const responseData = typeof error.response.data === 'string' && error.response.data.startsWith('<!DOCTYPE HTML')
+            ? `HTML response (length: ${error.response.data.length})`
+            : JSON.stringify(error.response.data);
+          this.log.error(`Response data: ${responseData}`);
+        }
+      } else {
+        this.log.error('An unexpected error occurred during API request:', error);
       }
-    });
+      // Re-throw the error so the calling function knows it failed.
+      throw error;
+    }
   }
 }
 
