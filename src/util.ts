@@ -76,3 +76,49 @@ export function poll<T>({ requestFn, stopCondition, interval, timeout, log, logP
     executePoll();
   });
 }
+
+
+/**
+ * Asserts that a value is not null or undefined.
+ * @param value The value to check.
+ * @param message The error message to throw if the value is null or undefined.
+ */
+export function assertIsDefined<T>(value: T, message: string): asserts value is NonNullable<T> {
+  if (value === undefined || value === null) {
+    throw new Error(message);
+  }
+}
+
+export function debounce<T>(
+  func: (arg: T) => void,
+  waitFor: number,
+  leading = false,
+): (arg: T) => void {
+  let timeoutId: NodeJS.Timeout | undefined;
+  let latestArg: T;
+
+  return function (this: unknown, arg: T): void {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const context = this;
+    latestArg = arg;
+
+    const later = () => {
+      timeoutId = undefined;
+      if (!leading) {
+        func.call(context, latestArg);
+      }
+    };
+
+    const callNow = leading && timeoutId === undefined;
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    timeoutId = setTimeout(later, waitFor);
+
+    if (callNow) {
+      func.call(context, latestArg);
+    }
+  };
+}

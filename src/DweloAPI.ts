@@ -1,6 +1,9 @@
 import axios, { AxiosRequestConfig, AxiosResponse, isAxiosError } from 'axios';
 import { Logging } from 'homebridge';
 import { POLLING_INTERVAL_MS, POLLING_TIMEOUT_MS } from './constants';
+import { debounce, poll, PollAbortedError } from './util';
+
+const DEBOUNCE_WAIT_MS = 1500;
 
 interface ListResponse {
   resultsCount: number;
@@ -223,6 +226,12 @@ export interface Temperature {
   value: number;
 }
 
+type CommandPollParams = {
+  deviceId: number;
+  commandPayload: Record<string, string>;
+  pollStopCondition: (status: RefreshedStatus) => boolean;
+};
+
 export class DweloAPI {
   constructor(
     private readonly token: string,
@@ -232,6 +241,22 @@ export class DweloAPI {
 
   private pollingControllers = new Map<number, AbortController>();
 
+  private debouncedCommandPollers = new Map<string, (params: CommandPollParams) => void>();
+
+  private getDebouncedPoller(deviceId: number, command: string): (params: CommandPollParams) => void {
+    const key = `${deviceId}-${command}`;
+    if (!this.debouncedCommandPollers.has(key)) {
+      this.log.debug(`Creating new debounced poller for ${key}`);
+      const poller = debounce(
+        (params: CommandPollParams) => this.sendCommandAndPoll(params),
+        DEBOUNCE_WAIT_MS,
+        true,
+      );
+      this.debouncedCommandPollers.set(key, poller);
+    }
+    return this.debouncedCommandPollers.get(key)!;
+  }
+
   public async pingHub(): Promise<void> {
     await this.request(`/v4/hub/${this.gatewayID}/ping/`, {
       method: 'POST',
@@ -240,9 +265,10 @@ export class DweloAPI {
   }
 
   public async setThermostatFanMode(fanMode: string, id: number) {
-    await this.sendCommandAndPoll({
+    const command = 'FanMode';
+    this.getDebouncedPoller(id, command)({
       deviceId: id,
-      commandPayload: { command: 'FanMode', commandValue: fanMode },
+      commandPayload: { command, commandValue: fanMode },
       pollStopCondition: (status) => {
         const device = status.THERMOSTATS.find(d => d.device_id === id);
         return device?.sensors.ThermostatFanMode === fanMode;
@@ -256,9 +282,10 @@ export class DweloAPI {
   }
 
   public async setSwitchState(on: boolean, id: number): Promise<void> {
-    await this.sendCommandAndPoll({
+    const command = on ? 'on' : 'off';
+    this.getDebouncedPoller(id, command)({
       deviceId: id,
-      commandPayload: { command: on ? 'on' : 'off' },
+      commandPayload: { command },
       pollStopCondition: (status) => {
         const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
         return device?.sensors.Switch === (on ? 'On' : 'Off');
@@ -267,9 +294,10 @@ export class DweloAPI {
   }
 
   public async setDimmerState(on: boolean, id: number) {
-    await this.sendCommandAndPoll({
+    const command = on ? 'on' : 'off';
+    this.getDebouncedPoller(id, command)({
       deviceId: id,
-      commandPayload: { command: on ? 'on' : 'off' },
+      commandPayload: { command },
       pollStopCondition: (status) => {
         const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
         return device?.sensors.Switch === (on ? 'On' : 'Off');
@@ -278,9 +306,10 @@ export class DweloAPI {
   }
 
   public async setDimmerBrightness(brightness: number, id: number) {
-    await this.sendCommandAndPoll({
+    const command = 'Multilevel On';
+    this.getDebouncedPoller(id, command)({
       deviceId: id,
-      commandPayload: { command: 'Multilevel On', commandValue: brightness.toString() },
+      commandPayload: { command, commandValue: brightness.toString() },
       pollStopCondition: (status) => {
         const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
         return device?.sensors.Percent === brightness;
@@ -289,7 +318,7 @@ export class DweloAPI {
   }
 
   public async setThermostatMode(mode: string, id: number) {
-    await this.sendCommandAndPoll({
+    this.getDebouncedPoller(id, mode)({
       deviceId: id,
       commandPayload: { command: mode },
       pollStopCondition: (status) => {
@@ -300,7 +329,7 @@ export class DweloAPI {
   }
 
   public async setThermostatTemperature(mode: string, temperature: number, id: number) {
-    await this.sendCommandAndPoll({
+    this.getDebouncedPoller(id, mode)({
       deviceId: id,
       commandPayload: { command: mode, commandValue: temperature.toString() },
       pollStopCondition: (status) => {
@@ -316,9 +345,10 @@ export class DweloAPI {
   }
 
   public async setLockState(locked: boolean, id: number) {
-    await this.sendCommandAndPoll({
+    const command = locked ? 'lock' : 'unlock';
+    this.getDebouncedPoller(id, command)({
       deviceId: id,
-      commandPayload: { command: locked ? 'lock' : 'unlock' },
+      commandPayload: { command },
       pollStopCondition: (status) => {
         const device = status.LOCKS.find(d => d.device_id === id);
         return device?.sensors.DoorLocked === (locked ? 'True' : 'False');
@@ -326,11 +356,7 @@ export class DweloAPI {
     });
   }
 
-  private async sendCommandAndPoll({ deviceId, commandPayload, pollStopCondition }: {
-    deviceId: number;
-    commandPayload: Record<string, string>;
-    pollStopCondition: (status: RefreshedStatus) => boolean;
-  }): Promise<void> {
+  private async sendCommandAndPoll({ deviceId, commandPayload, pollStopCondition }: CommandPollParams): Promise<void> {
     // Cancel any existing polling for this device.
     if (this.pollingControllers.has(deviceId)) {
       this.log.debug(`[Device ${deviceId}] New command received, cancelling previous polling operation.`);
@@ -428,5 +454,3 @@ export class DweloAPI {
     }
   }
 }
-
-import { poll, PollAbortedError } from './util';
