@@ -12,6 +12,7 @@ import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 export class DweloLockAccessory extends StatefulAccessory {
   private readonly lockService: Service;
   private readonly batteryService: Service;
+  private autoLockTimer: NodeJS.Timeout | null = null;
 
   constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(platform, log, api, dweloAPI, accessory);
@@ -37,6 +38,14 @@ export class DweloLockAccessory extends StatefulAccessory {
     this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(lockState);
     this.setBatteryLevel(device.sensors.BatteryLevel);
     this.log.debug(`Lock state updated to: ${lockState}`);
+
+    if (this.platform.config.autoLock?.enabled) {
+      if (lockState === this.api.hap.Characteristic.LockCurrentState.UNSECURED) {
+        this.scheduleAutoLock(this.platform.config.autoLock.unlockedDuration);
+      } else {
+        this.clearAutoLockTimer();
+      }
+    }
   }
 
   private async setTargetLockState(value: CharacteristicValue) {
@@ -53,11 +62,39 @@ export class DweloLockAccessory extends StatefulAccessory {
       // Once the API call is successful (including polling), update the current state.
       this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(targetState);
       this.log.info('Lock toggle completed');
+
+      if (this.platform.config.autoLock?.enabled) {
+        if (targetState === this.api.hap.Characteristic.LockTargetState.UNSECURED) {
+          this.scheduleAutoLock(this.platform.config.autoLock.homekitUnlockedDuration);
+        } else {
+          this.clearAutoLockTimer();
+        }
+      }
     } catch (error) {
       this.log.error('Error setting lock state:', error);
       // Revert on error
       this.lockService.getCharacteristic(this.api.hap.Characteristic.LockCurrentState).updateValue(previousCurrentState);
       this.lockService.getCharacteristic(this.api.hap.Characteristic.LockTargetState).updateValue(previousCurrentState);
+    }
+  }
+
+  private scheduleAutoLock(delayInMinutes: number) {
+    this.clearAutoLockTimer();
+    if (delayInMinutes > 0) {
+      const delayInMs = delayInMinutes * 60 * 1000;
+      this.log.info(`Scheduling auto-lock for '${this.accessory.displayName}' in ${delayInMinutes} minutes.`);
+      this.autoLockTimer = setTimeout(() => {
+        this.log.info(`Auto-locking '${this.accessory.displayName}'.`);
+        this.setTargetLockState(this.api.hap.Characteristic.LockTargetState.SECURED);
+      }, delayInMs);
+    }
+  }
+
+  private clearAutoLockTimer() {
+    if (this.autoLockTimer) {
+      this.log.info(`Clearing auto-lock timer for '${this.accessory.displayName}'.`);
+      clearTimeout(this.autoLockTimer);
+      this.autoLockTimer = null;
     }
   }
 
