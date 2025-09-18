@@ -113,6 +113,10 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
       try {
         this.log.debug('Pinging hub to encourage a status update.');
         await this.dweloAPI.pingHub();
+        // The hub may need a moment after the ping to gather updated device statuses.
+        // Let's add a short delay before requesting the data.
+        this.log.debug('Waiting for 2 seconds after ping to allow hub to update...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (error) {
         this.log.warn('Hub ping failed, proceeding with status refresh anyway.');
       }
