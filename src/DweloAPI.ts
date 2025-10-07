@@ -243,6 +243,9 @@ export class DweloAPI {
 
   private debouncedCommandPollers = new Map<string, (params: CommandPollParams) => void>();
 
+  private backgroundPoller: NodeJS.Timeout | null = null;
+  private waitingPolls = new Set<(status: RefreshedStatus) => void>();
+
   private getDebouncedPoller(deviceId: number, command: string): (params: CommandPollParams) => void {
     const key = `${deviceId}-${command}`;
     if (!this.debouncedCommandPollers.has(key)) {
@@ -356,6 +359,40 @@ export class DweloAPI {
     });
   }
 
+  private startBackgroundPoller() {
+    if (this.backgroundPoller) {
+      return; // Poller is already running
+    }
+    this.log.debug('Starting background poller for command confirmation.');
+    const pollFn = async () => {
+      if (this.waitingPolls.size === 0) {
+        this.log.debug('No more waiting polls. Stopping background poller.');
+        if (this.backgroundPoller) {
+          clearInterval(this.backgroundPoller);
+          this.backgroundPoller = null;
+        }
+        return;
+      }
+
+      try {
+        const status = await this.getRefreshedStatus();
+        // Notify all waiting poll handlers
+        for (const handler of this.waitingPolls) {
+          handler(status);
+        }
+      } catch (error) {
+        this.log.error('Background poller failed to get refreshed status:', error);
+        // In case of error, we'll just try again on the next interval.
+        // We could also consider clearing waiting polls if the error is permanent (e.g., 401)
+      }
+    };
+
+    // Run immediately and then set an interval
+    pollFn();
+    this.backgroundPoller = setInterval(pollFn, POLLING_INTERVAL_MS);
+  }
+
+
   private async sendCommandAndPoll({ deviceId, commandPayload, pollStopCondition }: CommandPollParams): Promise<void> {
     // Cancel any existing polling for this device.
     if (this.pollingControllers.has(deviceId)) {
@@ -368,49 +405,49 @@ export class DweloAPI {
     this.pollingControllers.set(deviceId, controller);
 
     const logPrefix = `[Device ${deviceId}]`;
-    const fullCommandPayload = { ...commandPayload, applicationId: 'ios' };
+    const fullCommandPayload = { ...commandPayload, applicationId: 'ios' }; // Ensure applicationId is always present for commands
     await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
     try {
       this.log.debug(`${logPrefix} Command sent successfully. Initiating background polling for state confirmation.`);
 
-      // Start polling in the background. DO NOT AWAIT IT.
-      // This allows the sendCommandAndPoll promise to resolve immediately,
-      // giving HomeKit quick feedback.
-      poll({
-        requestFn: () => this.getRefreshedStatus(),
-        stopCondition: pollStopCondition,
-        interval: POLLING_INTERVAL_MS,
-        timeout: POLLING_TIMEOUT_MS,
-        log: this.log,
-        logPrefix: `${logPrefix} Background polling for state change`,
-        signal: controller.signal,
-      }).catch(error => {
-        // Handle errors from the background poll. These errors won't affect the
-        // immediate resolution of the sendCommandAndPoll promise.
+      const pollPromise = new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.log.warn(`${logPrefix} Background state confirmation poll timed out.`);
+          reject(new Error('Polling timed out'));
+        }, POLLING_TIMEOUT_MS);
+
+        const pollHandler = (status: RefreshedStatus) => {
+          if (controller.signal.aborted) {
+            this.waitingPolls.delete(pollHandler);
+            clearTimeout(timeout);
+            reject(new PollAbortedError('Polling was aborted'));
+            return;
+          }
+
+          if (pollStopCondition(status)) {
+            this.log.debug(`${logPrefix} State change confirmed.`);
+            this.waitingPolls.delete(pollHandler);
+            clearTimeout(timeout);
+            resolve();
+          }
+        };
+
+        this.waitingPolls.add(pollHandler);
+        this.startBackgroundPoller();
+      });
+
+      // Handle the promise in the background
+      pollPromise.catch(error => {
         if (error instanceof PollAbortedError) {
           this.log.debug(`${logPrefix} Background polling was aborted by a new command.`);
-        } else if (error instanceof Error && error.message.includes('timed out')) {
-          this.log.warn(`${logPrefix} Background state confirmation poll timed out. This can happen if the command was dropped or the network is slow. Resending command once more as a fallback.`);
-          // Re-send the command, but don't wait for confirmation this time.
-          // This is a "fire and forget" retry for the background.
-          if (!controller.signal.aborted) {
-            this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload })
-              .then(() => this.log.debug(`${logPrefix} Fallback command sent successfully in background.`))
-              .catch(retryError => this.log.error(`${logPrefix} Background fallback command also failed.`, retryError));
-          }
         } else {
-          this.log.error(`${logPrefix} Background polling failed with an unexpected error:`, error);
+          this.log.error(`${logPrefix} Background polling failed:`, error);
         }
       }).finally(() => {
-        // Clean up the controller once the background poll (or its error handling) completes.
         if (this.pollingControllers.get(deviceId) === controller) {
           this.pollingControllers.delete(deviceId);
         }
       });
-
-      // The sendCommandAndPoll promise resolves here, after the command is sent
-      // but before the background polling completes.
-      return;
 
     } catch (error) {
       // If the initial command sending fails, this error is immediately propagated.
@@ -449,6 +486,7 @@ export class DweloAPI {
             // This custom protocol version header also appears to be required.
             'X-Dwelo-Protocol-Version': '1.1',
             'Accept': 'application/json',
+            'applicationId': 'ios', // Add the missing header for mobile API access
             'Accept-Language': 'en-US,en;q=0.9',
           },
         });
