@@ -371,44 +371,59 @@ export class DweloAPI {
     const fullCommandPayload = { ...commandPayload, applicationId: 'ios' };
     await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
     try {
-      await poll({
+      this.log.debug(`${logPrefix} Command sent successfully. Initiating background polling for state confirmation.`);
+
+      // Start polling in the background. DO NOT AWAIT IT.
+      // This allows the sendCommandAndPoll promise to resolve immediately,
+      // giving HomeKit quick feedback.
+      poll({
         requestFn: () => this.getRefreshedStatus(),
         stopCondition: pollStopCondition,
         interval: POLLING_INTERVAL_MS,
         timeout: POLLING_TIMEOUT_MS,
         log: this.log,
-        logPrefix: `${logPrefix} Polling for state change`,
+        logPrefix: `${logPrefix} Background polling for state change`,
         signal: controller.signal,
-      });
-    } catch (error) {
-      if (error instanceof PollAbortedError) {
-        this.log.debug(`${logPrefix} Polling was aborted by a new command. No fallback action needed.`);
-        // Do not re-throw. The new command's flow will continue.
-        return;
-      } else if (error instanceof Error && error.message.includes('timed out')) {
-        this.log.warn(`${logPrefix} State confirmation poll timed out. This can happen if the command was dropped or the network is slow. Resending command once more as a fallback.`);
-        try {
-          if (controller.signal.aborted) {
-            this.log.debug(`${logPrefix} Command was cancelled while handling timeout. No fallback action needed.`);
-            return;
-          }
+      }).catch(error => {
+        // Handle errors from the background poll. These errors won't affect the
+        // immediate resolution of the sendCommandAndPoll promise.
+        if (error instanceof PollAbortedError) {
+          this.log.debug(`${logPrefix} Background polling was aborted by a new command.`);
+        } else if (error instanceof Error && error.message.includes('timed out')) {
+          this.log.warn(`${logPrefix} Background state confirmation poll timed out. This can happen if the command was dropped or the network is slow. Resending command once more as a fallback.`);
           // Re-send the command, but don't wait for confirmation this time.
-          await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
-          this.log.debug(`${logPrefix} Fallback command sent successfully. Assuming it will be processed.`);
-        } catch (retryError) {
-          this.log.error(`${logPrefix} The fallback command also failed. The device state is likely unchanged.`, retryError);
-          throw error; // Re-throw the original timeout error to trigger a UI revert.
+          // This is a "fire and forget" retry for the background.
+          if (!controller.signal.aborted) {
+            this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload })
+              .then(() => this.log.debug(`${logPrefix} Fallback command sent successfully in background.`))
+              .catch(retryError => this.log.error(`${logPrefix} Background fallback command also failed.`, retryError));
+          }
+        } else {
+          this.log.error(`${logPrefix} Background polling failed with an unexpected error:`, error);
         }
+      }).finally(() => {
+        // Clean up the controller once the background poll (or its error handling) completes.
+        if (this.pollingControllers.get(deviceId) === controller) {
+          this.pollingControllers.delete(deviceId);
+        }
+      });
+
+      // The sendCommandAndPoll promise resolves here, after the command is sent
+      // but before the background polling completes.
+      return;
+
+    } catch (error) {
+      // If the initial command sending fails, this error is immediately propagated.
+      if (isAxiosError(error)) {
+        this.log.error(`${logPrefix} Initial command sending failed with status ${error.response?.status}: ${error.message}`);
       } else {
-        // For other errors during polling (e.g., API unreachable), re-throw.
-        this.log.error(`${logPrefix} Polling failed with an unexpected error:`, error);
-        throw error;
+        this.log.error(`${logPrefix} An unexpected error occurred during initial command sending:`, error);
       }
-    } finally {
-      // Clean up the controller, but only if a newer one hasn't already replaced it.
+      // Clean up the controller immediately if the initial command failed.
       if (this.pollingControllers.get(deviceId) === controller) {
         this.pollingControllers.delete(deviceId);
       }
+      throw error; // Re-throw to indicate immediate failure to HomeKit
     }
   }
 
