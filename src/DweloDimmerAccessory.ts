@@ -12,7 +12,6 @@ import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 export class DweloDimmerAccessory extends StatefulAccessory {
   private readonly service: Service;
   private lastKnownBrightness = 100;
-  private onCommandTimeout: NodeJS.Timeout | null = null;
 
   constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(platform, log, api, dweloAPI, accessory);
@@ -24,62 +23,29 @@ export class DweloDimmerAccessory extends StatefulAccessory {
       .onSet(async (value) => {
         const isOn = value as boolean;
         const previousOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value as boolean;
-
-        // Optimistically update the state in HomeKit
         this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
 
-        // Clear any pending "On" command timeout, as a new command (On or Off) is coming in.
-        if (this.onCommandTimeout) {
-          clearTimeout(this.onCommandTimeout);
-          this.onCommandTimeout = null;
-        }
-
-        if (isOn && previousOn) {
-          // This is a redundant "On" command for a light that's already on.
-          // This can happen when adjusting brightness. We just log it and do nothing else.
-          this.log.debug('Received redundant "On" command while light is already on. Ignoring.');
-          this.onCommandTimeout = null;
-        }
-
-        if (isOn) {
-          // This is an "On" command. It might be followed by a brightness command from HomeKit.
-          // We set a short timeout. If a brightness command arrives, it will cancel this.
-          // If not, we'll proceed to turn the light on to its last known brightness.
-          this.onCommandTimeout = setTimeout(async () => {
-            this.log.debug('Handling debounced "On" command. Setting to last known brightness.');
-            try {
-              // This command implicitly turns the light on.
-              await this.dweloAPI.setDimmerBrightness(this.lastKnownBrightness, this.accessory.context.device.device_id);
-              // Also update the brightness characteristic in HomeKit.
-              this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(this.lastKnownBrightness);
-              this.log.debug(`Dimmer state was set to: ON with last known brightness ${this.lastKnownBrightness}`);
-            } catch (error) {
-              this.log.error('Error setting dimmer state (from delayed On):', error);
-              // Revert the optimistic update if the API call fails.
-              this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
-            }
-          }, 150); // 150ms is a safe debounce delay for HomeKit.
-        } else { // Turning Off
-          try {
+        try {
+          if (isOn) {
+            // When turning on, set to the last known brightness. This command implicitly turns the light on.
+            // HomeKit may send a separate brightness command, which is fine. The API's debouncer will handle it.
+            this.log.debug(`Turning ON dimmer to last known brightness: ${this.lastKnownBrightness}%`);
+            await this.dweloAPI.setDimmerBrightness(this.lastKnownBrightness, this.accessory.context.device.device_id);
+            this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(this.lastKnownBrightness);
+          } else {
+            // When turning off, send the 'off' command.
+            this.log.debug('Turning OFF dimmer.');
             await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
-            this.log.debug('Dimmer state was set to: OFF');
-          } catch (error) {
-            this.log.error('Error setting dimmer state to OFF:', error);
-            this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
           }
+        } catch (error) {
+          this.log.error('Error setting dimmer state:', error);
+          this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
         }
       });
 
     this.service.getCharacteristic(this.api.hap.Characteristic.Brightness)
       .onGet(() => this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value)
       .onSet(async (value) => {
-        // A brightness command is the source of truth. Cancel any debounced "On" command.
-        if (this.onCommandTimeout) {
-          clearTimeout(this.onCommandTimeout);
-          this.onCommandTimeout = null;
-          this.log.debug('Brightness command received, cancelling separate "On" command.');
-        }
-
         const brightness = value as number;
         const previousBrightness = this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value as number;
         const previousOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value as boolean;
