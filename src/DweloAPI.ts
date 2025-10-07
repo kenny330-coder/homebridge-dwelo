@@ -431,41 +431,60 @@ export class DweloAPI {
     path: string,
     config: AxiosRequestConfig<T> = {},
   ): Promise<AxiosResponse<T>> {
-    try {
-      this.log.debug(`Dwelo API Request: ${config.method ?? 'GET'} ${path}`, { params: config.params, data: config.data });
-      const response = await axios({
-        url: 'https://api.dwelo.com' + path,
-        ...config,
-        headers: {
-          ...config.headers,
-          'Authorization': `Token ${this.token}`,
-          // This specific User-Agent seems to be required by the mobile API endpoint.
-          'User-Agent': 'Dwelo/3 CFNetwork/3860.100.1 Darwin/25.0.0',
-          // This custom protocol version header also appears to be required.
-          'X-Dwelo-Protocol-Version': '1.1',
-          'Accept': 'application/json',
-          'Accept-Language': 'en-US,en;q=0.9',
-        },
-      });
-      this.log.debug('Dwelo API Response:', response.data);
-      return response;
-    } catch (error) {
-      if (isAxiosError(error)) {
-        if (error.response?.status === 401) {
-          this.log.error('Authentication failed (401 Unauthorized). Please check that your Dwelo API token in the plugin configuration is correct and has not expired.');
+    const MAX_RETRIES = 3;
+    const INITIAL_DELAY_MS = 500;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        this.log.debug(`Dwelo API Request (Attempt ${attempt}/${MAX_RETRIES}): ${config.method ?? 'GET'} ${path}`, { params: config.params, data: config.data });
+        const response = await axios({
+          url: 'https://api.dwelo.com' + path,
+          ...config,
+          headers: {
+            ...config.headers,
+            'Authorization': `Token ${this.token}`,
+            // This specific User-Agent seems to be required by the mobile API endpoint.
+            'User-Agent': 'Dwelo/3 CFNetwork/3860.100.1 Darwin/25.0.0',
+            // This custom protocol version header also appears to be required.
+            'X-Dwelo-Protocol-Version': '1.1',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        });
+        this.log.debug('Dwelo API Response:', response.data);
+        return response; // Success, exit the loop and return
+      } catch (error) {
+        lastError = error;
+        if (isAxiosError(error)) {
+          // 502, 503, 504 are transient server errors worth retrying.
+          const isRetryable = error.response && [502, 503, 504].includes(error.response.status);
+
+          if (isRetryable && attempt < MAX_RETRIES) {
+            const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+            this.log.warn(`API request to ${path} failed with status ${error.response?.status} (Attempt ${attempt}/${MAX_RETRIES}). Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue; // Go to the next iteration of the loop
+          } else if (error.response?.status === 401) {
+            this.log.error('Authentication failed (401 Unauthorized). Please check that your Dwelo API token is correct and has not expired.');
+            break; // Don't retry on auth errors
+          }
         }
-        this.log.error(`API request to ${path} failed with status ${error.response?.status}: ${error.message}`);
-        if (error.response?.data) {
-          const responseData = typeof error.response.data === 'string' && error.response.data.startsWith('<!DOCTYPE HTML')
-            ? `HTML response (length: ${error.response.data.length})`
-            : JSON.stringify(error.response.data);
-          this.log.error(`Response data: ${responseData}`);
-        }
-      } else {
-        this.log.error('An unexpected error occurred during API request:', error);
+        // For non-retryable errors or if all retries fail, break the loop.
+        break;
       }
-      // Re-throw the error so the calling function knows it failed.
-      throw error;
     }
+
+    // If we've exhausted all retries, log the final error and re-throw it.
+    if (isAxiosError(lastError)) {
+      this.log.error(`API request to ${path} failed after ${MAX_RETRIES} attempts with status ${lastError.response?.status}: ${lastError.message}`);
+      if (lastError.response?.data) {
+        const responseData = typeof lastError.response.data === 'string' && lastError.response.data.startsWith('<!DOCTYPE HTML')
+          ? `HTML response (length: ${lastError.response.data.length})`
+          : JSON.stringify(lastError.response.data);
+        this.log.error(`Final response data: ${responseData}`);
+      }
+    }
+    throw lastError; // Re-throw the last captured error
   }
 }
