@@ -411,8 +411,8 @@ export class DweloAPI {
           // The error is already logged by sendCommandAndPoll, so we just need to continue.
           this.log.debug('A command in the queue failed. Continuing with the next command.');
         }
-        // Wait for 700ms before processing the next command.
-        await new Promise(resolve => setTimeout(resolve, 700));
+        // Wait for 350ms before processing the next command.
+        await new Promise(resolve => setTimeout(resolve, 350));
       }
     }
 
