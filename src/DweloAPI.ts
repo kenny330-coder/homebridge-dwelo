@@ -414,14 +414,29 @@ export class DweloAPI {
       this.log.debug(`${logPrefix} Command sent successfully. Initiating background polling for state confirmation.`);
 
       const pollPromise = new Promise<void>((resolve, reject) => {
+        let fallbackTimer: NodeJS.Timeout | null = null;
+
+        // This timer will re-send the command after 7 seconds if it hasn't been confirmed yet.
+        fallbackTimer = setTimeout(() => {
+          if (controller.signal.aborted) {
+            this.log.debug(`${logPrefix} Fallback command cancelled because operation was aborted.`);
+            return;
+          }
+          this.log.warn(`${logPrefix} State not confirmed after 7s. Sending redundant command as a fallback.`);
+          this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload })
+            .catch(err => this.log.error(`${logPrefix} Redundant fallback command failed.`, err));
+        }, 7000);
+
         const timeout = setTimeout(() => {
           this.log.warn(`${logPrefix} Background state confirmation poll timed out.`);
+          if (fallbackTimer) clearTimeout(fallbackTimer);
           reject(new Error('Polling timed out'));
         }, POLLING_TIMEOUT_MS);
 
         const pollHandler = (status: RefreshedStatus) => {
           if (controller.signal.aborted) {
             this.waitingPolls.delete(pollHandler);
+            if (fallbackTimer) clearTimeout(fallbackTimer);
             clearTimeout(timeout);
             reject(new PollAbortedError('Polling was aborted'));
             return;
@@ -430,6 +445,7 @@ export class DweloAPI {
           if (pollStopCondition(status)) {
             this.log.debug(`${logPrefix} State change confirmed.`);
             this.waitingPolls.delete(pollHandler);
+            if (fallbackTimer) clearTimeout(fallbackTimer);
             clearTimeout(timeout);
             resolve();
           }
