@@ -25,7 +25,12 @@ export class HomebridgePluginDweloPlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
-    this.dweloAPI = new DweloAPI(config.token, config.gatewayId, this.log);
+    const applicationId = config.applicationId || 'ios'; // Default to 'ios' if not provided
+    this.dweloAPI = new DweloAPI(
+      config.token,
+      config.gatewayId,
+      applicationId, this.log,
+    );
 
     this.log.info(`Dwelo Plugin Version: ${version}`);
     this.log.debug(`Finished initializing platform: ${this.config.name}`);

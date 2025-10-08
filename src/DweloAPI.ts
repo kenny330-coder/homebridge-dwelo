@@ -236,6 +236,7 @@ export class DweloAPI {
   constructor(
     private readonly token: string,
     private readonly gatewayID: string,
+    private readonly applicationId: string,
     private readonly log: Logging,
   ) { }
 
@@ -537,7 +538,7 @@ export class DweloAPI {
             // This custom protocol version header also appears to be required.
             'X-Dwelo-Protocol-Version': '1.1',
             'Accept': 'application/json',
-            'applicationId': 'ios', // Add the missing header for mobile API access
+            'applicationId': this.applicationId,
             'Accept-Language': 'en-US,en;q=0.9',
           },
         });
