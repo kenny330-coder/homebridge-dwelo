@@ -246,13 +246,16 @@ export class DweloAPI {
   private backgroundPoller: NodeJS.Timeout | null = null;
   private waitingPolls = new Set<(status: RefreshedStatus) => void>();
 
+  private commandQueue: (() => Promise<void>)[] = [];
+  private isProcessingQueue = false;
+
   private getDebouncedPoller(deviceId: number, command: string): (params: CommandPollParams) => void {
     const key = `${deviceId}-${command}`;
     if (!this.debouncedCommandPollers.has(key)) {
       this.log.debug(`Creating new debounced poller for ${key}`);
       const poller = debounce(
         (params: CommandPollParams) => this.sendCommandAndPoll(params),
-        DEBOUNCE_WAIT_MS,
+        DEBOUNCE_WAIT_MS, // Debounce per-device
         true,
       );
       this.debouncedCommandPollers.set(key, poller);
@@ -395,6 +398,28 @@ export class DweloAPI {
     this.backgroundPoller = setInterval(pollFn, POLLING_INTERVAL_MS);
   }
 
+  private async processCommandQueue() {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
+
+    while (this.commandQueue.length > 0) {
+      const commandTask = this.commandQueue.shift();
+      if (commandTask) {
+        try {
+          await commandTask();
+        } catch (error) {
+          // The error is already logged by sendCommandAndPoll, so we just need to continue.
+          this.log.debug('A command in the queue failed. Continuing with the next command.');
+        }
+        // Wait for 700ms before processing the next command.
+        await new Promise(resolve => setTimeout(resolve, 700));
+      }
+    }
+
+    this.isProcessingQueue = false;
+    this.log.debug('Command queue is empty. Rate limiter is idle.');
+  }
+
 
   private async sendCommandAndPoll({ deviceId, commandPayload, pollStopCondition }: CommandPollParams): Promise<void> {
     // Cancel any existing polling for this device.
@@ -409,78 +434,85 @@ export class DweloAPI {
 
     const logPrefix = `[Device ${deviceId}]`;
     const fullCommandPayload = { ...commandPayload, applicationId: 'ios' }; // Ensure applicationId is always present for commands
-    await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
-    try {
-      this.log.debug(`${logPrefix} Command sent successfully. Initiating background polling for state confirmation.`);
 
-      const pollPromise = new Promise<void>((resolve, reject) => {
-        let fallbackTimer: NodeJS.Timeout | null = null;
+    // Instead of executing immediately, add the command logic to a queue.
+    this.commandQueue.push(async () => {
+      await this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload });
+      try {
+        this.log.debug(`${logPrefix} Command sent successfully. Initiating background polling for state confirmation.`);
 
-        // This timer will re-send the command after 7 seconds if it hasn't been confirmed yet.
-        fallbackTimer = setTimeout(() => {
-          if (controller.signal.aborted) {
-            this.log.debug(`${logPrefix} Fallback command cancelled because operation was aborted.`);
-            return;
-          }
-          this.log.warn(`${logPrefix} State not confirmed after 7s. Sending redundant command as a fallback.`);
-          this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload })
-            .catch(err => this.log.error(`${logPrefix} Redundant fallback command failed.`, err));
-        }, 7000);
+        const pollPromise = new Promise<void>((resolve, reject) => {
+          let fallbackTimer: NodeJS.Timeout | null = null;
 
-        const timeout = setTimeout(() => {
-          this.log.warn(`${logPrefix} Background state confirmation poll timed out.`);
-          if (fallbackTimer) clearTimeout(fallbackTimer);
-          reject(new Error('Polling timed out'));
-        }, POLLING_TIMEOUT_MS);
+          // This timer will re-send the command after 7 seconds if it hasn't been confirmed yet.
+          fallbackTimer = setTimeout(() => {
+            if (controller.signal.aborted) {
+              this.log.debug(`${logPrefix} Fallback command cancelled because operation was aborted.`);
+              return;
+            }
+            this.log.warn(`${logPrefix} State not confirmed after 7s. Sending redundant command as a fallback.`);
+            this.request(`/v3/device/${deviceId}/command/`, { method: 'POST', data: fullCommandPayload })
+              .catch(err => this.log.error(`${logPrefix} Redundant fallback command failed.`, err));
+          }, 7000);
 
-        const pollHandler = (status: RefreshedStatus) => {
-          if (controller.signal.aborted) {
-            this.waitingPolls.delete(pollHandler);
+          const timeout = setTimeout(() => {
+            this.log.warn(`${logPrefix} Background state confirmation poll timed out.`);
             if (fallbackTimer) clearTimeout(fallbackTimer);
-            clearTimeout(timeout);
-            reject(new PollAbortedError('Polling was aborted'));
-            return;
+            reject(new Error('Polling timed out'));
+          }, POLLING_TIMEOUT_MS);
+
+          const pollHandler = (status: RefreshedStatus) => {
+            if (controller.signal.aborted) {
+              this.waitingPolls.delete(pollHandler);
+              if (fallbackTimer) clearTimeout(fallbackTimer);
+              clearTimeout(timeout);
+              reject(new PollAbortedError('Polling was aborted'));
+              return;
+            }
+
+            if (pollStopCondition(status)) {
+              this.log.debug(`${logPrefix} State change confirmed.`);
+              this.waitingPolls.delete(pollHandler);
+              if (fallbackTimer) clearTimeout(fallbackTimer);
+              clearTimeout(timeout);
+              resolve();
+            }
+          };
+
+          this.waitingPolls.add(pollHandler);
+          this.startBackgroundPoller();
+        });
+
+        // Handle the promise in the background
+        pollPromise.catch(error => {
+          if (error instanceof PollAbortedError) {
+            this.log.debug(`${logPrefix} Background polling was aborted by a new command.`);
+          } else {
+            this.log.error(`${logPrefix} Background polling failed:`, error);
           }
-
-          if (pollStopCondition(status)) {
-            this.log.debug(`${logPrefix} State change confirmed.`);
-            this.waitingPolls.delete(pollHandler);
-            if (fallbackTimer) clearTimeout(fallbackTimer);
-            clearTimeout(timeout);
-            resolve();
+        }).finally(() => {
+          if (this.pollingControllers.get(deviceId) === controller) {
+            this.pollingControllers.delete(deviceId);
           }
-        };
+        });
 
-        this.waitingPolls.add(pollHandler);
-        this.startBackgroundPoller();
-      });
-
-      // Handle the promise in the background
-      pollPromise.catch(error => {
-        if (error instanceof PollAbortedError) {
-          this.log.debug(`${logPrefix} Background polling was aborted by a new command.`);
+      } catch (error) {
+        // If the initial command sending fails, this error is immediately propagated.
+        if (isAxiosError(error)) {
+          this.log.error(`${logPrefix} Initial command sending failed with status ${error.response?.status}: ${error.message}`);
         } else {
-          this.log.error(`${logPrefix} Background polling failed:`, error);
+          this.log.error(`${logPrefix} An unexpected error occurred during initial command sending:`, error);
         }
-      }).finally(() => {
+        // Clean up the controller immediately if the initial command failed.
         if (this.pollingControllers.get(deviceId) === controller) {
           this.pollingControllers.delete(deviceId);
         }
-      });
+        throw error; // Re-throw to indicate immediate failure to HomeKit
+      }
+    });
 
-    } catch (error) {
-      // If the initial command sending fails, this error is immediately propagated.
-      if (isAxiosError(error)) {
-        this.log.error(`${logPrefix} Initial command sending failed with status ${error.response?.status}: ${error.message}`);
-      } else {
-        this.log.error(`${logPrefix} An unexpected error occurred during initial command sending:`, error);
-      }
-      // Clean up the controller immediately if the initial command failed.
-      if (this.pollingControllers.get(deviceId) === controller) {
-        this.pollingControllers.delete(deviceId);
-      }
-      throw error; // Re-throw to indicate immediate failure to HomeKit
-    }
+    // Start processing the queue if it's not already running.
+    this.processCommandQueue();
   }
 
   private async request<T>(
