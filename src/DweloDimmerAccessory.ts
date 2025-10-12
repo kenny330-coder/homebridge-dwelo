@@ -59,19 +59,28 @@ export class DweloDimmerAccessory extends StatefulAccessory {
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(false);
             await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer set to OFF (brightness 0)`);
+          } else if (brightness === 100) {
+            // When brightness is set to 100%, send the 'on' command, which Dwelo treats as 100%.
+            this.lastKnownBrightness = 100;
+            this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
+            await this.dweloAPI.setDimmerState(true, this.accessory.context.device.device_id);
+            this.log.debug(`Dimmer brightness was set to 100% by sending 'on' command.`);
           } else {
             // When brightness is set to a non-zero value, store it and ensure the light is on.
             this.lastKnownBrightness = brightness;
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
-            // This command implicitly turns the light on.
             await this.dweloAPI.setDimmerBrightness(brightness, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer brightness was set to: ${brightness}`);
           }
         } catch (error) {
-          this.log.error('Error setting dimmer brightness:', error);
-          // Revert optimistic updates on error
-          this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(previousBrightness);
-          this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
+          this.log.error('Error setting dimmer brightness. The command may have still gone through.', error);
+          // Do not revert the state on timeout, as the command may have succeeded.
+          // The state will be corrected by the next polling update if it failed.
+          if (!(error instanceof Error && error.message.includes('Polling timed out'))) {
+            // Revert optimistic updates only for immediate errors, not timeouts.
+            this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(previousBrightness);
+            this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
+          }
         }
       });
 

@@ -319,10 +319,14 @@ export class DweloAPI {
       commandPayload: { command, commandValue: brightness.toString() },
       pollStopCondition: (status) => {
         const device = status['LIGHTS AND SWITCHES'].find(d => d.device_id === id);
-        // The command was successful if the light is on and the brightness is what we set.
-        // Some dimmers report 99% for 100%, so we also check if the switch is 'On' as a confirmation.
-        // If brightness is 0, this is an 'off' command, so we check the switch state.
-        return device?.sensors.Percent === brightness || (brightness > 0 && device?.sensors.Switch === 'On');
+        if (!device) return false;
+
+        // Handle cases where setting 100% results in 99%.
+        const brightnessMatch = brightness === 100
+          ? (device.sensors.Percent === 100 || device.sensors.Percent === 99)
+          : device.sensors.Percent === brightness;
+
+        return brightnessMatch && device.sensors.Switch === 'On';
       },
     });
   }
