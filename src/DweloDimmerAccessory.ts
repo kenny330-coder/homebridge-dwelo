@@ -48,7 +48,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           // When turning off, send the 'off' command immediately.
           try {
             this.log.debug('Turning OFF dimmer.');
-            await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
+            await this.dweloAPI.setSwitchState(false, this.accessory.context.device.device_id);
           } catch (error) {
             this.log.error('Error setting dimmer state:', error);
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
@@ -76,13 +76,13 @@ export class DweloDimmerAccessory extends StatefulAccessory {
           if (brightness === 0) {
             // Setting brightness to 0 is equivalent to turning the light off.
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(false);
-            await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
+            await this.dweloAPI.setSwitchState(false, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer set to OFF (brightness 0)`);
           } else if (brightness === 100) {
             // When brightness is set to 100%, send the 'on' command, which Dwelo treats as 100%.
             this.lastKnownBrightness = 100;
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
-            await this.dweloAPI.setSwitchState, this.accessory.context.device.device_id);
+            await this.dweloAPI.setSwitchState(true, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer brightness was set to 100% by sending 'on' command.`);
           } else {
             // When brightness is set to a non-zero value, store it and ensure the light is on.
