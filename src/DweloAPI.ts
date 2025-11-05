@@ -3,7 +3,7 @@ import { Logging } from 'homebridge';
 import { POLLING_INTERVAL_MS, POLLING_TIMEOUT_MS } from './constants';
 import { debounce, poll, PollAbortedError } from './util';
 
-const DEBOUNCE_WAIT_MS = 1500;
+const DEBOUNCE_WAIT_MS = 400;
 
 interface ListResponse {
   resultsCount: number;
@@ -524,8 +524,8 @@ export class DweloAPI {
     path: string,
     config: AxiosRequestConfig<T> = {},
   ): Promise<AxiosResponse<T>> {
-    const MAX_RETRIES = 3;
-    const INITIAL_DELAY_MS = 500;
+    const MAX_RETRIES = 5;
+    const INITIAL_DELAY_MS = 800;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {

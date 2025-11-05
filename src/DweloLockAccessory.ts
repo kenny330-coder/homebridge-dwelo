@@ -41,7 +41,9 @@ export class DweloLockAccessory extends StatefulAccessory {
 
     if (this.platform.config.autoLock?.enabled) {
       if (lockState === this.api.hap.Characteristic.LockCurrentState.UNSECURED) {
-        this.scheduleAutoLock(this.platform.config.autoLock.unlockedDuration);
+        if (!this.autoLockTimer) {
+          this.scheduleAutoLock(this.platform.config.autoLock.unlockedDuration);
+        }
       } else {
         this.clearAutoLockTimer();
       }

@@ -12,6 +12,7 @@ import { HomebridgePluginDweloPlatform } from './HomebridgePluginDweloPlatform';
 export class DweloDimmerAccessory extends StatefulAccessory {
   private readonly service: Service;
   private lastKnownBrightness = 100;
+  private turnOnTimer: NodeJS.Timeout | null = null;
 
   constructor(platform: HomebridgePluginDweloPlatform, log: Logging, api: API, dweloAPI: DweloAPI, accessory: PlatformAccessory) {
     super(platform, log, api, dweloAPI, accessory);
@@ -25,21 +26,33 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         const previousOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value as boolean;
         this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(isOn);
 
-        try {
-          if (isOn) {
-            // When turning on, set to the last known brightness. This command implicitly turns the light on.
-            // HomeKit may send a separate brightness command, which is fine. The API's debouncer will handle it.
-            this.log.debug(`Turning ON dimmer to last known brightness: ${this.lastKnownBrightness}%`);
-            await this.dweloAPI.setDimmerBrightness(this.lastKnownBrightness, this.accessory.context.device.device_id);
-            this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(this.lastKnownBrightness);
-          } else {
-            // When turning off, send the 'off' command.
+        if (this.turnOnTimer) {
+          clearTimeout(this.turnOnTimer);
+          this.turnOnTimer = null;
+        }
+
+        if (isOn) {
+          // If the light is turned on, we wait a moment to see if a brightness command is also sent.
+          // This prevents the light from flashing to the last brightness level before adjusting to the new one.
+          this.turnOnTimer = setTimeout(async () => {
+            this.log.debug(`(Delayed) Turning ON dimmer to last known brightness: ${this.lastKnownBrightness}%`);
+            try {
+              await this.dweloAPI.setDimmerBrightness(this.lastKnownBrightness, this.accessory.context.device.device_id);
+              this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(this.lastKnownBrightness);
+            } catch (error) {
+              this.log.error('Error setting dimmer state (delayed):', error);
+              this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(false);
+            }
+          }, 100);
+        } else {
+          // When turning off, send the 'off' command immediately.
+          try {
             this.log.debug('Turning OFF dimmer.');
             await this.dweloAPI.setDimmerState(false, this.accessory.context.device.device_id);
+          } catch (error) {
+            this.log.error('Error setting dimmer state:', error);
+            this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
           }
-        } catch (error) {
-          this.log.error('Error setting dimmer state:', error);
-          this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(previousOn);
         }
       });
 
@@ -49,6 +62,12 @@ export class DweloDimmerAccessory extends StatefulAccessory {
         const brightness = value as number;
         const previousBrightness = this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).value as number;
         const previousOn = this.service.getCharacteristic(this.api.hap.Characteristic.On).value as boolean;
+
+        // If a delayed 'on' command is pending, cancel it. This brightness command will handle turning on the light.
+        if (this.turnOnTimer) {
+          clearTimeout(this.turnOnTimer);
+          this.turnOnTimer = null;
+        }
 
         // Optimistically update HomeKit
         this.service.getCharacteristic(this.api.hap.Characteristic.Brightness).updateValue(brightness);
@@ -63,7 +82,7 @@ export class DweloDimmerAccessory extends StatefulAccessory {
             // When brightness is set to 100%, send the 'on' command, which Dwelo treats as 100%.
             this.lastKnownBrightness = 100;
             this.service.getCharacteristic(this.api.hap.Characteristic.On).updateValue(true);
-            await this.dweloAPI.setDimmerState(true, this.accessory.context.device.device_id);
+            await this.dweloAPI.setSwitchState, this.accessory.context.device.device_id);
             this.log.debug(`Dimmer brightness was set to 100% by sending 'on' command.`);
           } else {
             // When brightness is set to a non-zero value, store it and ensure the light is on.
