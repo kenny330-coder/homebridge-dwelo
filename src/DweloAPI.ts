@@ -3,7 +3,7 @@ import { Logging } from 'homebridge';
 import { POLLING_INTERVAL_MS, POLLING_TIMEOUT_MS } from './constants';
 import { debounce, poll, PollAbortedError } from './util';
 
-const DEBOUNCE_WAIT_MS = 400;
+const DEBOUNCE_WAIT_MS = 50;
 
 interface ListResponse {
   resultsCount: number;
